@@ -11,8 +11,9 @@
 - `clap` — CLI 参数解析
 - `serde` + `serde_yaml` — YAML 配置读写
 - `serde_json` — JSON state 文件读写
-- `dialoguer` — 无参数时 fuzzy 项目选择
+- `dialoguer` — 无参数时 fuzzy 项目选择（需 `fuzzy-select` feature）
 - `colored` — 终端彩色输出
+- `shellexpand` — 展开 `~` 路径为绝对路径
 - `std::process::Command` — 调用系统命令
 
 ### 系统命令（macOS 自带）
@@ -137,9 +138,15 @@ struct EditorConfig {
 ### `launch stop <project>` 停止流程
 
 1. 读取 `~/.launch/state/<project>.json`
-2. Kill 所有记录的 PID（先 SIGTERM，等待数秒，未退出则 SIGKILL）
-3. AppleScript 关闭对应的 iTerm2 tab（按 tab 名前缀 `[projectname]` 匹配）
+2. Kill 所有记录的进程组（先 SIGTERM，等 3 秒，未退出则 SIGKILL）
+3. AppleScript 关闭对应的 iTerm2 tab（按 tab 名前缀 `[projectname]` 匹配，找不到则忽略）
 4. 删除 state 文件
+
+### 重复启动行为
+
+如果 `launch <project>` 时检测到项目已在运行（state 文件存在且 PID 存活），提示用户选择：
+- **重启**：先 stop 再重新 launch
+- **退出**：不做任何操作
 
 ## iTerm2 控制
 
@@ -147,26 +154,36 @@ struct EditorConfig {
 
 - **默认 vertical**（左右排列）— 每个 pane 保留完整高度，适合看日志
 - **可选 grid**（2x2 网格）— 先左右分，再各自上下分
+- 超过 4 个 pane 时：vertical 模式照常左右排列；grid 模式下超出 4 个的 pane 追加为 vertical split
 
 ### AppleScript 实现
+
+通用 N 个 pane 的分割算法：
+
+1. 创建新 tab，第一个 pane 自动就绪
+2. 对第 2 到第 N 个 pane，每次对 tab 的**第一个 session** 执行 split，新 pane 出现在末尾
+3. 分割完成后，通过 `sessions` 列表按索引逐个配置名称和命令
+
+grid 布局：先对第一个 session split vertically（左右分），再对左右两个 session 各自 split horizontally（上下分）。
 
 ```applescript
 tell application "iTerm2"
   tell current window
     create tab with default profile
-    tell current session of current tab
-      set name to "[myproject] frontend"
-      write text "cd ~/projects/myproject/frontend && npm run dev"
-    end tell
-    tell current tab
-      tell current session
+    set theTab to current tab
+    -- 分割出 N-1 个额外 pane（vertical 布局）
+    repeat (N-1) times
+      tell first session of theTab
         split vertically with default profile
       end tell
-      tell last session
-        set name to "[myproject] backend"
-        write text "cd ~/projects/myproject/backend && ..."
+    end repeat
+    -- 逐个配置
+    repeat with i from 1 to N
+      tell item i of sessions of theTab
+        set name to "[myproject] panename"
+        write text "cd <dir> && echo $$ > /tmp/.launch_proj_pane.pid && exec <cmd>"
       end tell
-    end tell
+    end repeat
   end tell
 end tell
 ```
@@ -177,21 +194,35 @@ end tell
 
 ### PID 获取
 
-在 cmd 前包一层，将 PID 写入临时文件：
+在 cmd 前包一层，将 PID 写入临时文件，然后用 `exec` 替换当前 shell：
 
 ```bash
 echo $$ > /tmp/.launch_<project>_<pane>.pid && exec <cmd>
 ```
 
-启动后读取 pid 文件，写入 state JSON。
+`exec` 会替换当前 shell 进程，但保留同一个 PID，所以 pid 文件中记录的值就是最终运行的进程 PID。
+
+启动后 Rust 侧短暂等待（~500ms），然后读取 pid 文件，写入 state JSON，最后删除临时 pid 文件。
+
+### 进程 Kill 策略
+
+Stop 时使用**进程组**来确保子进程一起被清理：
+
+1. 通过记录的 PID 获取进程组 PGID：`ps -o pgid= -p <pid>`
+2. `kill -- -<pgid>`（SIGTERM 整个进程组）
+3. 等待 3 秒，检查是否退出
+4. 未退出则 `kill -9 -- -<pgid>`（SIGKILL 整个进程组）
+
+这样即使 `npm run dev` fork 了 node 子进程，也能一并清理。
 
 ## 端口检测
 
 ### 端口提取规则
 
 1. 从 `browser` URL 解析 — 匹配 `localhost:<port>` 或 `127.0.0.1:<port>`
-2. 从 pane `cmd` 解析 — 正则匹配 `--port\s+\d+`、`-p\s+\d+`
+2. 从 pane `cmd` 解析 — 正则匹配 `--port\s+\d+`、`--port=\d+`、`-p\s+\d+`、`-p\d+`
 3. 去重
+4. 注意：环境变量形式（如 `PORT=3000`）和被脚本包裹的端口不做提取，用户应在 `browser` URL 中显式声明需要检测的端口
 
 ### 冲突处理
 
@@ -248,11 +279,37 @@ sideproject   已停止    -
 
 ### `launch new <project>`
 
-在 `~/.launch/<project>.yaml` 写入模板，然后自动打开编辑。
+在 `~/.launch/<project>.yaml` 写入以下模板，然后自动打开编辑：
+
+```yaml
+name: <project>
+iterm:
+  # layout: vertical  # vertical(默认) | grid
+  panes:
+    - name: dev
+      dir: ~/projects/<project>
+      cmd: echo "hello"
+editor:
+  # cmd: code  # 默认 code，可换成 cursor 等
+  folders:
+    - ~/projects/<project>
+# browser:
+#   - http://localhost:3000
+```
 
 ### `launch`（无参数）
 
 用 `dialoguer::FuzzySelect` 列出所有项目名，选择后等同于 `launch <project>`。
+
+## 路径处理
+
+YAML 配置中的 `~` 路径在 Rust 侧加载配置后立即用 `shellexpand` 展开为绝对路径，后续所有操作（git 检查、路径去重、传给 AppleScript）均使用展开后的绝对路径。
+
+## 编辑器启动
+
+- 执行 `<editor.cmd> <folder1> <folder2> ...`，一次打开所有文件夹
+- `editor.cmd` 默认为 `code`
+- `editor.folders` 为空或 `editor` 整个 section 未配置时跳过编辑器启动
 
 ## 错误处理
 
@@ -270,6 +327,7 @@ clap = { version = "4", features = ["derive"] }
 serde = { version = "1", features = ["derive"] }
 serde_yaml = "0.9"
 serde_json = "1"
-dialoguer = "0.11"
+dialoguer = { version = "0.11", features = ["fuzzy-select"] }
 colored = "2"
+shellexpand = "3"
 ```
