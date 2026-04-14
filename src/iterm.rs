@@ -116,7 +116,7 @@ fn append_pane_config(s: &mut String, project: &str, pane: &PaneConfig, index: u
 fn build_pane_command(project: &str, pane: &PaneConfig) -> String {
     match &pane.cmd {
         Some(cmd) => {
-            let pid_file = format!("/tmp/.launch_{project}_{}.pid", pane.name);
+            let pid_file = format!("/tmp/.on_{project}_{}.pid", pane.name);
             format!("cd {} && echo $$ > {pid_file} && exec {cmd}", pane.dir)
         }
         None => format!("cd {}", pane.dir),
@@ -182,7 +182,7 @@ mod tests {
         let cmd = build_pane_command("myproject", &pane);
         assert!(cmd.contains("cd /tmp/test"));
         assert!(cmd.contains("echo $$"));
-        assert!(cmd.contains(".launch_myproject_dev.pid"));
+        assert!(cmd.contains(".on_myproject_dev.pid"));
         assert!(cmd.contains("exec npm run dev"));
     }
 

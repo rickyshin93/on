@@ -30,22 +30,22 @@ pub struct EditorConfig {
     pub folders: Option<Vec<String>>,
 }
 
-/// Returns the base directory: ~/.launch/
-pub fn launch_dir() -> PathBuf {
+/// Returns the base directory: ~/.on/
+pub fn base_dir() -> PathBuf {
     let home = dirs::home_dir().expect("Cannot determine home directory");
-    home.join(".launch")
+    home.join(".on")
 }
 
-/// Returns the config file path for a project: ~/.launch/<name>.yaml
+/// Returns the config file path for a project: ~/.on/<name>.yaml
 pub fn config_path(name: &str) -> PathBuf {
-    launch_dir().join(format!("{name}.yaml"))
+    base_dir().join(format!("{name}.yaml"))
 }
 
-/// Ensure ~/.launch/ and ~/.launch/state/ directories exist
+/// Ensure ~/.on/ and ~/.on/state/ directories exist
 pub fn ensure_dirs() -> Result<()> {
-    let base = launch_dir();
-    fs::create_dir_all(&base).context("Failed to create ~/.launch/")?;
-    fs::create_dir_all(base.join("state")).context("Failed to create ~/.launch/state/")?;
+    let base = base_dir();
+    fs::create_dir_all(&base).context("Failed to create ~/.on/")?;
+    fs::create_dir_all(base.join("state")).context("Failed to create ~/.on/state/")?;
     Ok(())
 }
 
@@ -54,7 +54,7 @@ pub fn load(name: &str) -> Result<Config> {
     let path = config_path(name);
     if !path.exists() {
         bail!(
-            "Config file not found: {}\nRun `launch new {name}` to create one.",
+            "Config file not found: {}\nRun `on new {name}` to create one.",
             path.display(),
         );
     }
@@ -82,9 +82,9 @@ fn expand_paths(config: &mut Config) {
     }
 }
 
-/// List all project names from ~/.launch/*.yaml
+/// List all project names from ~/.on/*.yaml
 pub fn list_projects() -> Vec<String> {
-    let dir = launch_dir();
+    let dir = base_dir();
     let mut projects = Vec::new();
     if let Ok(entries) = fs::read_dir(&dir) {
         for entry in entries.flatten() {
@@ -225,28 +225,28 @@ iterm:
     }
 
     #[test]
-    fn launch_dir_path() {
-        let dir = launch_dir();
+    fn base_dir_path() {
+        let dir = base_dir();
         let home = dirs::home_dir().unwrap();
-        assert_eq!(dir, home.join(".launch"));
+        assert_eq!(dir, home.join(".on"));
     }
 
     #[test]
     fn config_path_format() {
         let path = config_path("myproject");
-        assert_eq!(path, launch_dir().join("myproject.yaml"));
+        assert_eq!(path, base_dir().join("myproject.yaml"));
     }
 
     #[test]
     fn ensure_dirs_creates_directories() {
         ensure_dirs().unwrap();
-        assert!(launch_dir().exists());
-        assert!(launch_dir().join("state").exists());
+        assert!(base_dir().exists());
+        assert!(base_dir().join("state").exists());
     }
 
     #[test]
     fn create_and_load_template() {
-        let name = "_launch_test_tpl";
+        let name = "_on_test_tpl";
         let path = config_path(name);
         let _ = fs::remove_file(&path);
 

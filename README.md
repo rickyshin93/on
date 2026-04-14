@@ -1,14 +1,14 @@
-# launch
+# on
 
 A macOS CLI tool to restore your full dev environment with one command.
 
-Stop manually opening terminals, editors, and browsers every time you start working — `launch` does it all from a single YAML config.
+Stop manually opening terminals, editors, and browsers every time you start working — `on` does it all from a single YAML config.
 
 ## Install
 
 ```bash
 brew tap rickyshin93/tap
-brew install launch
+brew install rickyshin93/tap/on
 ```
 
 Or build from source:
@@ -21,30 +21,30 @@ cargo install --path .
 
 ```bash
 # Create a project config
-launch new myproject
+on new myproject
 
 # Edit the config
-launch edit myproject
+on edit myproject
 
 # Launch the project
-launch myproject
+on myproject
 
 # See all projects
-launch list
+on list
 
 # Stop the project
-launch stop myproject
+on stop myproject
 
 # Stop all projects
-launch stop --all
+on stop --all
 
 # Fuzzy select (no args)
-launch
+on
 ```
 
 ## Configuration
 
-Configs live in `~/.launch/<project>.yaml`:
+Configs live in `~/.on/<project>.yaml`:
 
 ```yaml
 name: myproject
@@ -72,13 +72,13 @@ browser:
 ## Features
 
 - **iTerm2 Panes** — Opens a tab per project, splits panes with auto-naming `[project] pane`
-- **Layouts** — `vertical` (side-by-side, default) or `grid` (2×2)
+- **Layouts** — `vertical` (side-by-side, default) or `grid` (2x2)
 - **Editor** — Opens configured editor (`code`, `cursor`, etc.) with project folders
 - **Browser** — Opens URLs in default browser
 - **Port Conflict Detection** — Auto-detects ports from URLs/commands, warns on conflicts
 - **Git Status** — Warns about uncommitted changes before launch
-- **Process Tracking** — Tracks PIDs for clean `launch stop`
-- **Fuzzy Select** — Run `launch` with no args to pick a project
+- **Process Tracking** — Tracks PIDs for clean `on stop`
+- **Fuzzy Select** — Run `on` with no args to pick a project
 
 ## Requirements
 

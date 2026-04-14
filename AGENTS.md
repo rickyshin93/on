@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-`launch` — A macOS CLI tool to restore your full dev environment with one command (iTerm2 panes, editor, browser).
+`on` — A macOS CLI tool to restore your full dev environment with one command (iTerm2 panes, editor, browser).
 
 - Language: Rust (edition 2021)
 - Build: `cargo build`
@@ -23,7 +23,7 @@
 src/
   main.rs          — CLI entry point (clap)
   lib.rs           — Library entry point
-  config.rs        — YAML config parsing (~/.launch/<project>.yaml)
+  config.rs        — YAML config parsing (~/.on/<project>.yaml)
   commands.rs      — Process tracking (PID)
   state.rs         — Runtime state management
   checks/
@@ -40,5 +40,5 @@ src/
 ## Notes
 
 - macOS + iTerm2 only
-- Config path: `~/.launch/<project>.yaml`
+- Config path: `~/.on/<project>.yaml`
 - Keep README.md in sync when changing CLI arguments

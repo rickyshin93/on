@@ -19,9 +19,9 @@ pub struct PaneState {
     pub pid: u32,
 }
 
-/// Path to state file: ~/.launch/state/<project>.json
+/// Path to state file: ~/.on/state/<project>.json
 pub fn state_path(project: &str) -> PathBuf {
-    config::launch_dir()
+    config::base_dir()
         .join("state")
         .join(format!("{project}.json"))
 }
@@ -76,7 +76,7 @@ pub fn is_running(project: &str) -> Result<bool> {
 
 /// List all projects that have state files
 pub fn running_projects() -> Vec<String> {
-    let state_dir = config::launch_dir().join("state");
+    let state_dir = config::base_dir().join("state");
     let mut projects = Vec::new();
     if let Ok(entries) = fs::read_dir(&state_dir) {
         for entry in entries.flatten() {
@@ -97,7 +97,7 @@ mod tests {
 
     fn test_state() -> ProjectState {
         ProjectState {
-            project: "_launch_test_state".to_string(),
+            project: "_on_test_state".to_string(),
             started_at: "2026-04-12T10:00:00".to_string(),
             panes: vec![
                 PaneState {
@@ -127,7 +127,7 @@ mod tests {
 
     #[test]
     fn load_nonexistent_returns_none() {
-        assert!(load("_launch_nonexistent_xyz").unwrap().is_none());
+        assert!(load("_on_nonexistent_xyz").unwrap().is_none());
     }
 
     #[test]
@@ -137,7 +137,7 @@ mod tests {
 
     #[test]
     fn is_running_false_when_no_state() {
-        assert!(!is_running("_launch_nonexistent_xyz").unwrap());
+        assert!(!is_running("_on_nonexistent_xyz").unwrap());
     }
 
     #[test]

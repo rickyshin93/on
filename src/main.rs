@@ -14,7 +14,7 @@ use dialoguer::FuzzySelect;
 
 #[derive(Parser)]
 #[command(
-    name = "launch",
+    name = "on",
     version,
     about = "One-command dev environment launcher"
 )]
@@ -67,7 +67,7 @@ fn main() {
             } else if let Some(name) = project {
                 process::stop(&name)
             } else {
-                Err(anyhow!("Usage: launch stop <project> or launch stop --all"))
+                Err(anyhow!("Usage: on stop <project> or on stop --all"))
             }
         }
         Some(Commands::List) => process::list(),
@@ -75,12 +75,12 @@ fn main() {
         Some(Commands::New { project }) => process::new_project(&project),
         Some(Commands::Doctor) => process::doctor(),
         Some(Commands::Completions { shell }) => {
-            generate(shell, &mut Cli::command(), "launch", &mut std::io::stdout());
+            generate(shell, &mut Cli::command(), "on", &mut std::io::stdout());
             Ok(())
         }
         None => {
             if let Some(name) = cli.project {
-                process::launch(&name)
+                process::run(&name)
             } else {
                 fuzzy_select()
             }
@@ -97,7 +97,7 @@ fn fuzzy_select() -> Result<()> {
     config::ensure_dirs()?;
     let projects = config::list_projects();
     if projects.is_empty() {
-        bail!("No projects configured. Run `launch new <name>` to create one.");
+        bail!("No projects configured. Run `on new <name>` to create one.");
     }
 
     let selection = FuzzySelect::new()
@@ -107,7 +107,7 @@ fn fuzzy_select() -> Result<()> {
         .map_err(|e| anyhow::anyhow!("Selection error: {e}"))?;
 
     if let Some(idx) = selection {
-        process::launch(&projects[idx])
+        process::run(&projects[idx])
     } else {
         println!("Cancelled.");
         Ok(())

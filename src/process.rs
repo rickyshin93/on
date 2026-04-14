@@ -9,7 +9,7 @@ use colored::Colorize;
 use crate::{browser, config, editor, git, iterm, port, state};
 
 /// Main launch flow for a project
-pub fn launch(name: &str) -> Result<()> {
+pub fn run(name: &str) -> Result<()> {
     config::ensure_dirs()?;
     let cfg = config::load(name)?;
 
@@ -116,7 +116,7 @@ pub fn launch(name: &str) -> Result<()> {
     // Open browser
     browser::open(cfg.browser.as_ref())?;
 
-    println!("{}", format!("Project '{name}' launched!").green());
+    println!("{}", format!("Project '{name}' is on!").green());
     Ok(())
 }
 
@@ -128,7 +128,7 @@ fn collect_pids(project: &str, panes: &[config::PaneConfig]) -> Vec<state::PaneS
         if pane.cmd.is_none() {
             continue;
         }
-        let pid_file = format!("/tmp/.launch_{project}_{}.pid", pane.name);
+        let pid_file = format!("/tmp/.on_{project}_{}.pid", pane.name);
         if let Some(pid) = poll_pid_file(&pid_file) {
             results.push(state::PaneState {
                 name: pane.name.clone(),
@@ -225,7 +225,7 @@ pub fn list() -> Result<()> {
     let projects = config::list_projects();
 
     if projects.is_empty() {
-        println!("No projects configured. Run `launch new <name>` to create one.");
+        println!("No projects configured. Run `on new <name>` to create one.");
         return Ok(());
     }
 
@@ -290,15 +290,15 @@ pub fn new_project(name: &str) -> Result<()> {
 pub fn doctor() -> Result<()> {
     use std::path::Path;
 
-    println!("launch doctor\n");
+    println!("on doctor\n");
 
     // Check iTerm2
     let iterm_installed = Path::new("/Applications/iTerm.app").exists();
     print_check(iterm_installed, "iTerm2 installed");
 
     // Check ~/.launch/ directory
-    let launch_dir_exists = config::launch_dir().exists();
-    print_check(launch_dir_exists, "~/.launch/ directory exists");
+    let on_dir_exists = config::base_dir().exists();
+    print_check(on_dir_exists, "~/.on/ directory exists");
 
     // Check project count
     let projects = config::list_projects();

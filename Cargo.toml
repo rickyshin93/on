@@ -1,6 +1,6 @@
 [package]
-name = "launch"
-version = "0.1.0"
+name = "on"
+version = "0.2.0"
 edition = "2021"
 license = "MIT"
 description = "A CLI tool to launch your dev environment with one command"
@@ -8,11 +8,11 @@ repository = "https://github.com/rickyshin93/launch"
 homepage = "https://github.com/rickyshin93/launch"
 
 [lib]
-name = "launch"
+name = "on"
 path = "src/lib.rs"
 
 [[bin]]
-name = "launch"
+name = "on"
 path = "src/main.rs"
 
 [dependencies]
