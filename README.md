@@ -2,7 +2,16 @@
 
 A macOS CLI tool to restore your full dev environment with one command.
 
+Stop manually opening terminals, editors, and browsers every time you start working — `launch` does it all from a single YAML config.
+
 ## Install
+
+```bash
+brew tap rickyshin93/tap
+brew install launch
+```
+
+Or build from source:
 
 ```bash
 cargo install --path .
@@ -62,17 +71,20 @@ browser:
 
 ## Features
 
-- **iTerm2 Panes** - Opens a tab per project, splits panes with auto-naming `[project] pane`
-- **Layouts** - `vertical` (side-by-side, default) or `grid` (2x2)
-- **Editor** - Opens configured editor with project folders
-- **Browser** - Opens URLs in default browser
-- **Port Conflict Detection** - Auto-detects ports from URLs/commands, warns on conflicts
-- **Git Status** - Warns about uncommitted changes before launch
-- **Process Tracking** - Tracks PIDs for clean `launch stop`
-- **Fuzzy Select** - Run `launch` with no args to pick a project
+- **iTerm2 Panes** — Opens a tab per project, splits panes with auto-naming `[project] pane`
+- **Layouts** — `vertical` (side-by-side, default) or `grid` (2×2)
+- **Editor** — Opens configured editor (`code`, `cursor`, etc.) with project folders
+- **Browser** — Opens URLs in default browser
+- **Port Conflict Detection** — Auto-detects ports from URLs/commands, warns on conflicts
+- **Git Status** — Warns about uncommitted changes before launch
+- **Process Tracking** — Tracks PIDs for clean `launch stop`
+- **Fuzzy Select** — Run `launch` with no args to pick a project
 
 ## Requirements
 
 - macOS
-- iTerm2
-- Rust (for building)
+- [iTerm2](https://iterm2.com/)
+
+## License
+
+[MIT](LICENSE)
