@@ -1,0 +1,1004 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>on — One command. Your entire dev environment.</title>
+<meta name="description" content="Stop manually opening terminals, editors, and browsers. on launches your full dev environment from a single YAML config.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#09090b;--surface:#141416;--border:#27272a;
+  --cyan:#22d3ee;--purple:#a78bfa;--green:#22c55e;
+  --text:#fafafa;--text2:#a1a1aa;--text3:#71717a;
+  --radius:12px;--radius-sm:8px;
+  --font:Inter,system-ui,-apple-system,sans-serif;
+  --mono:'JetBrains Mono',ui-monospace,monospace;
+}
+html{scroll-behavior:smooth}
+body{
+  background:var(--bg);color:var(--text);
+  font-family:var(--font);line-height:1.6;
+  -webkit-font-smoothing:antialiased;
+  overflow-x:hidden;
+}
+a{color:var(--cyan);text-decoration:none}
+a:hover{text-decoration:underline}
+
+/* ---- Dot grid background ---- */
+.bg-grid{
+  position:fixed;inset:0;z-index:0;pointer-events:none;
+  background-image:radial-gradient(circle,#ffffff06 1px,transparent 1px);
+  background-size:24px 24px;
+}
+
+/* ---- Layout ---- */
+.container{max-width:1100px;margin:0 auto;padding:0 24px;position:relative;z-index:1}
+section{padding:100px 0}
+
+/* ---- Language Toggle ---- */
+.lang-toggle{
+  position:fixed;top:20px;right:24px;z-index:100;
+  background:var(--surface);border:1px solid var(--border);
+  border-radius:var(--radius-sm);padding:6px 14px;
+  color:var(--text2);font-size:13px;font-family:var(--font);
+  cursor:pointer;transition:border-color .2s;
+}
+.lang-toggle:hover{border-color:var(--cyan);color:var(--text)}
+
+/* ---- Hero ---- */
+.hero{
+  text-align:center;padding:160px 0 80px;
+  position:relative;
+}
+.hero::before{
+  content:'';position:absolute;top:-80px;left:50%;
+  transform:translateX(-50%);width:600px;height:400px;
+  background:radial-gradient(ellipse,rgba(34,211,238,.08) 0%,transparent 70%);
+  pointer-events:none;z-index:0;
+}
+.hero-title{
+  font-size:clamp(64px,10vw,96px);font-weight:700;
+  letter-spacing:-2px;position:relative;z-index:1;
+  text-shadow:0 0 40px rgba(34,211,238,.3),0 0 80px rgba(34,211,238,.1);
+}
+.hero-sub{
+  font-size:clamp(18px,2.5vw,24px);color:var(--text2);
+  margin-top:16px;font-weight:300;position:relative;z-index:1;
+}
+.hero-install{
+  margin-top:40px;display:inline-flex;align-items:center;gap:12px;
+  background:var(--surface);border:1px solid var(--border);
+  border-radius:var(--radius-sm);padding:12px 20px;
+  font-family:var(--mono);font-size:15px;color:var(--text2);
+  position:relative;z-index:1;transition:border-color .2s;
+}
+.hero-install:hover{border-color:var(--cyan)}
+.hero-install code{color:var(--text)}
+.copy-btn{
+  background:none;border:none;color:var(--text3);cursor:pointer;
+  padding:4px;display:flex;align-items:center;transition:color .2s;
+  position:relative;
+}
+.copy-btn:hover{color:var(--cyan)}
+.copy-btn:focus-visible{outline:2px solid var(--cyan);outline-offset:2px;border-radius:4px}
+.copy-btn svg{width:18px;height:18px}
+.copy-feedback{
+  position:absolute;top:-28px;left:50%;transform:translateX(-50%);
+  font-family:var(--font);font-size:12px;color:var(--green);
+  opacity:0;transition:opacity .2s;pointer-events:none;white-space:nowrap;
+}
+.copy-feedback.show{opacity:1}
+
+.hero-links{
+  margin-top:24px;position:relative;z-index:1;
+  display:flex;justify-content:center;gap:16px;
+}
+.gh-btn{
+  display:inline-flex;align-items:center;gap:8px;
+  padding:10px 20px;border-radius:var(--radius-sm);
+  background:var(--surface);border:1px solid var(--border);
+  color:var(--text);font-size:14px;font-weight:500;
+  cursor:pointer;transition:border-color .2s,background .2s;
+  text-decoration:none;
+}
+.gh-btn:hover{border-color:var(--text3);background:#1a1a1e;text-decoration:none}
+.gh-btn:focus-visible{outline:2px solid var(--cyan);outline-offset:2px}
+.gh-btn svg{width:18px;height:18px}
+
+/* ---- Terminal Demo ---- */
+.demo{padding:40px 0 100px}
+.terminal{
+  max-width:640px;margin:0 auto;
+  background:var(--surface);border:1px solid var(--border);
+  border-radius:var(--radius);overflow:hidden;
+  box-shadow:0 0 60px rgba(34,211,238,.06),0 24px 48px rgba(0,0,0,.4);
+}
+.terminal-bar{
+  display:flex;align-items:center;gap:8px;
+  padding:12px 16px;border-bottom:1px solid var(--border);
+}
+.terminal-dot{width:12px;height:12px;border-radius:50%}
+.terminal-dot.r{background:#ef4444}
+.terminal-dot.y{background:#eab308}
+.terminal-dot.g{background:#22c55e}
+.terminal-title{
+  flex:1;text-align:center;font-size:13px;color:var(--text3);
+  font-family:var(--font);margin-right:52px;
+}
+.terminal-body{
+  padding:20px;font-family:var(--mono);font-size:14px;
+  line-height:1.8;min-height:200px;
+}
+.terminal-line{opacity:0;transform:translateY(4px);transition:opacity .3s,transform .3s}
+.terminal-line.visible{opacity:1;transform:translateY(0)}
+.terminal-line .prompt{color:var(--text2)}
+.terminal-line .cmd{color:var(--text)}
+.terminal-line .check{color:var(--green)}
+.terminal-line .highlight{color:var(--cyan);font-weight:500}
+.terminal-line .cursor{
+  display:inline-block;width:8px;height:17px;
+  background:var(--text);vertical-align:text-bottom;
+  animation:blink 1s step-end infinite;
+}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:0}}
+
+/* ---- Showcase ---- */
+.showcase{padding:0 0 100px}
+.showcase-label{
+  text-align:center;font-size:clamp(28px,4vw,40px);font-weight:600;
+  margin-bottom:16px;letter-spacing:-0.5px;
+}
+.showcase-sublabel{
+  text-align:center;font-size:16px;color:var(--text2);margin-bottom:60px;
+}
+.showcase-grid{
+  display:grid;grid-template-columns:1fr 1fr;gap:24px;
+  align-items:start;
+}
+
+/* Shared window chrome */
+.mock-window{
+  background:var(--surface);border:1px solid var(--border);
+  border-radius:var(--radius);overflow:hidden;
+  box-shadow:0 8px 32px rgba(0,0,0,.3);
+}
+.mock-bar{
+  display:flex;align-items:center;gap:8px;
+  padding:10px 14px;border-bottom:1px solid var(--border);
+  background:rgba(255,255,255,.02);
+}
+.mock-bar .terminal-dot{width:10px;height:10px}
+.mock-bar-title{
+  flex:1;text-align:center;font-size:12px;color:var(--text3);
+  font-family:var(--font);margin-right:42px;
+}
+
+/* tmux mockup */
+.tmux-body{display:grid;grid-template-columns:1fr 1fr;min-height:280px}
+.tmux-pane{
+  padding:12px 14px;font-family:var(--mono);font-size:11px;
+  line-height:1.7;color:var(--text2);position:relative;
+}
+.tmux-pane:not(:last-child){border-right:1px solid var(--border)}
+.tmux-pane-full{grid-column:1/-1;border-top:1px solid var(--border)}
+.tmux-pane-tag{
+  display:inline-block;font-family:var(--font);font-size:10px;
+  font-weight:600;letter-spacing:.5px;text-transform:uppercase;
+  color:var(--cyan);margin-bottom:8px;
+  background:rgba(34,211,238,.08);padding:2px 8px;border-radius:4px;
+}
+.tmux-pane .g{color:var(--green)}
+.tmux-pane .c{color:var(--cyan)}
+.tmux-pane .y{color:#eab308}
+.tmux-pane .t{color:var(--text)}
+.tmux-pane .d{color:var(--text3)}
+.tmux-status{
+  display:flex;align-items:center;
+  padding:4px 12px;border-top:1px solid var(--border);
+  background:rgba(34,211,238,.04);font-family:var(--mono);font-size:10px;
+}
+.tmux-status-left{color:var(--cyan);font-weight:500}
+.tmux-status-mid{flex:1;display:flex;gap:2px;justify-content:center}
+.tmux-status-tab{
+  padding:1px 10px;color:var(--text3);
+}
+.tmux-status-tab.active{
+  color:var(--text);background:rgba(255,255,255,.06);border-radius:3px;
+}
+.tmux-status-right{color:var(--text3)}
+
+/* Editor mockup */
+.editor-body{display:flex;min-height:280px}
+.editor-sidebar{
+  width:180px;border-right:1px solid var(--border);
+  padding:8px 0;font-size:11px;font-family:var(--font);
+  background:rgba(255,255,255,.01);flex-shrink:0;
+}
+.editor-section{margin-bottom:4px}
+.editor-section-title{
+  display:flex;align-items:center;gap:4px;
+  padding:4px 12px;font-weight:600;font-size:11px;
+  color:var(--text2);cursor:default;text-transform:uppercase;
+  letter-spacing:.3px;
+}
+.editor-section-title svg{width:12px;height:12px;color:var(--text3)}
+.editor-file{
+  display:flex;align-items:center;gap:6px;
+  padding:3px 12px 3px 24px;color:var(--text3);cursor:default;
+  font-family:var(--font);font-size:11px;
+}
+.editor-file.active{background:rgba(34,211,238,.06);color:var(--text)}
+.editor-file svg{width:12px;height:12px;flex-shrink:0}
+.editor-file .folder-icon{color:#eab308}
+.editor-file .ts-icon{color:#3b82f6}
+.editor-file .py-icon{color:#22c55e}
+.editor-file .json-icon{color:#eab308}
+.editor-file .md-icon{color:var(--text2)}
+.editor-main{flex:1;position:relative}
+.editor-tabs{
+  display:flex;border-bottom:1px solid var(--border);
+  font-size:11px;font-family:var(--font);
+}
+.editor-tab{
+  padding:6px 14px;color:var(--text3);border-right:1px solid var(--border);
+  cursor:default;display:flex;align-items:center;gap:6px;
+}
+.editor-tab.active{
+  color:var(--text);background:var(--surface);
+  border-top:2px solid var(--cyan);padding-top:4px;
+}
+.editor-tab svg{width:12px;height:12px}
+.editor-code{
+  padding:12px 16px;font-family:var(--mono);font-size:11px;
+  line-height:1.8;color:var(--text2);
+}
+.editor-code .ln{color:#333;user-select:none;display:inline-block;width:24px;text-align:right;margin-right:16px}
+.editor-code .kw{color:var(--purple)}
+.editor-code .fn{color:#60a5fa}
+.editor-code .str{color:var(--green)}
+.editor-code .cm{color:#525252}
+.editor-code .tp{color:var(--cyan)}
+
+/* Editor VS Code details */
+.editor-explorer-header{
+  font-size:10px;font-weight:600;letter-spacing:.8px;
+  color:var(--text3);padding:8px 12px 2px;
+  font-family:var(--font);
+}
+.editor-workspace-label{
+  font-size:10px;font-weight:600;letter-spacing:.3px;
+  color:var(--text2);padding:4px 12px 6px;
+  font-family:var(--font);border-bottom:1px solid var(--border);
+  margin-bottom:4px;
+}
+.editor-tab-path{
+  font-size:9px;color:var(--text3);margin-left:2px;font-style:italic;
+}
+.editor-breadcrumb{
+  font-size:10px;color:var(--text3);padding:4px 16px;
+  border-bottom:1px solid var(--border);font-family:var(--font);
+}
+.editor-statusbar{
+  display:flex;justify-content:space-between;align-items:center;
+  padding:3px 12px;border-top:1px solid var(--border);
+  background:rgba(34,211,238,.06);font-size:10px;font-family:var(--font);
+}
+.editor-statusbar-left,.editor-statusbar-right{
+  display:flex;align-items:center;gap:12px;
+}
+.editor-statusbar-item{color:var(--text3);display:flex;align-items:center;gap:3px}
+.editor-statusbar-item.branch{color:var(--text2)}
+
+/* Showcase caption */
+.showcase-caption{
+  text-align:center;margin-top:12px;font-size:12px;color:var(--text3);
+  font-family:var(--font);
+}
+
+@media(max-width:900px){
+  .showcase-grid{grid-template-columns:1fr;gap:32px}
+  .editor-sidebar{width:150px}
+}
+@media(max-width:640px){
+  .tmux-body{grid-template-columns:1fr}
+  .tmux-pane:not(:last-child){border-right:none;border-bottom:1px solid var(--border)}
+  .tmux-pane-full{grid-column:auto}
+  .editor-sidebar{display:none}
+  .tmux-pane{font-size:10px;padding:10px 12px}
+  .editor-code{font-size:10px}
+}
+
+/* ---- Features ---- */
+.features{padding-bottom:100px}
+.section-title{
+  font-size:clamp(28px,4vw,40px);font-weight:600;
+  text-align:center;margin-bottom:60px;letter-spacing:-0.5px;
+}
+.section-title code{
+  font-family:var(--mono);color:var(--cyan);
+  background:rgba(34,211,238,.1);padding:2px 8px;border-radius:6px;
+}
+.features-grid{
+  display:grid;grid-template-columns:repeat(3,1fr);gap:20px;
+}
+.feature-card{
+  background:var(--surface);border:1px solid var(--border);
+  border-radius:var(--radius);padding:28px;
+  transition:border-color .2s,box-shadow .2s;
+}
+.feature-card:hover{
+  border-color:var(--cyan);
+  box-shadow:0 0 24px rgba(34,211,238,.06);
+}
+.feature-icon{
+  width:40px;height:40px;margin-bottom:16px;
+  color:var(--cyan);
+}
+.feature-icon svg{width:100%;height:100%}
+.feature-title{font-size:17px;font-weight:600;margin-bottom:8px}
+.feature-desc{font-size:14px;color:var(--text2);line-height:1.6}
+
+/* ---- Install ---- */
+.install{text-align:center;padding-bottom:80px}
+.install-cmds{
+  display:inline-flex;flex-direction:column;gap:12px;
+  margin-top:40px;text-align:left;
+}
+.install-line{
+  display:flex;align-items:center;gap:12px;
+  background:var(--surface);border:1px solid var(--border);
+  border-radius:var(--radius-sm);padding:12px 16px;
+  font-family:var(--mono);font-size:14px;
+  transition:border-color .2s;
+}
+.install-line:hover{border-color:var(--cyan)}
+.install-line code{color:var(--text);flex:1;white-space:nowrap}
+.install-alt{margin-top:20px;font-size:13px;color:var(--text3)}
+.install-alt code{
+  font-family:var(--mono);color:var(--text2);
+  background:rgba(255,255,255,.05);padding:2px 6px;border-radius:4px;
+}
+
+/* ---- Example Config ---- */
+.example{text-align:center;padding-bottom:100px}
+.example-window{
+  max-width:580px;margin:40px auto 0;text-align:left;
+  background:var(--surface);border:1px solid var(--border);
+  border-radius:var(--radius);overflow:hidden;
+  box-shadow:0 8px 32px rgba(0,0,0,.3);
+}
+.example-bar{
+  display:flex;align-items:center;gap:8px;
+  padding:10px 14px;border-bottom:1px solid var(--border);
+  background:rgba(255,255,255,.02);
+}
+.example-bar-title{
+  flex:1;text-align:center;font-size:12px;color:var(--text3);
+  font-family:var(--mono);margin-right:42px;
+}
+.example-body{
+  padding:20px 24px;font-family:var(--mono);font-size:13px;
+  line-height:1.8;position:relative;overflow-x:auto;
+}
+.example-body .yk{color:var(--cyan)}
+.example-body .yv{color:var(--text)}
+.example-body .ys{color:var(--green)}
+.example-body .yc{color:var(--text3);font-style:italic}
+.example-body .yi{color:var(--purple)}
+.example-copy{
+  position:absolute;top:12px;right:12px;
+  background:rgba(255,255,255,.06);border:1px solid var(--border);
+  border-radius:6px;padding:6px 8px;cursor:pointer;
+  color:var(--text3);transition:color .2s,border-color .2s;
+  display:flex;align-items:center;
+}
+.example-copy:hover{color:var(--cyan);border-color:var(--cyan)}
+.example-copy:focus-visible{outline:2px solid var(--cyan);outline-offset:2px}
+.example-copy svg{width:16px;height:16px}
+.example-hint{margin-top:16px;font-size:13px;color:var(--text3)}
+.example-hint code{
+  font-family:var(--mono);color:var(--text2);
+  background:rgba(255,255,255,.05);padding:2px 6px;border-radius:4px;
+}
+
+/* ---- Footer ---- */
+footer{
+  text-align:center;padding:40px 0;
+  border-top:1px solid var(--border);
+  font-size:13px;color:var(--text3);
+}
+footer a{color:var(--text3)}
+footer a:hover{color:var(--text2)}
+footer span{margin:0 8px}
+
+/* ---- Responsive ---- */
+@media(max-width:1024px){
+  .features-grid{grid-template-columns:repeat(2,1fr)}
+}
+@media(max-width:640px){
+  section{padding:60px 0}
+  .hero{padding:120px 0 60px}
+  .features-grid{grid-template-columns:1fr}
+  .terminal-body{padding:16px;font-size:13px}
+  .install-line{font-size:13px;padding:10px 14px}
+  .hero-install{font-size:13px;padding:10px 16px}
+}
+
+/* ---- Reduced motion ---- */
+@media(prefers-reduced-motion:reduce){
+  .terminal-line{transition:none;opacity:1;transform:none}
+  .cursor{animation:none !important}
+  *{transition-duration:0s !important}
+}
+</style>
+</head>
+<body>
+
+<div class="bg-grid" aria-hidden="true"></div>
+
+<button class="lang-toggle" id="langToggle" aria-label="Switch language">EN / 中文</button>
+
+<!-- Hero -->
+<section class="hero">
+  <div class="container">
+    <h1 class="hero-title">on</h1>
+    <p class="hero-sub" data-i18n="subtitle">One command. Your entire dev environment.</p>
+    <div class="hero-install">
+      <code>brew install rickyshin93/tap/on</code>
+      <button class="copy-btn" data-copy="brew install rickyshin93/tap/on" aria-label="Copy install command">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+        <span class="copy-feedback" data-i18n="copied">Copied!</span>
+      </button>
+    </div>
+    <div class="hero-links">
+      <a href="https://github.com/rickyshin93/launch" class="gh-btn" target="_blank" rel="noopener">
+        <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.3 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61-.546-1.385-1.335-1.755-1.335-1.755-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23.96-.267 1.98-.399 3-.405 1.02.006 2.04.138 3 .405 2.28-1.552 3.285-1.23 3.285-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.42.36.81 1.096.81 2.22 0 1.606-.015 2.896-.015 3.286 0 .315.21.694.825.576C20.565 21.795 24 17.295 24 12 24 5.37 18.63 0 12 0z"/></svg>
+        <span>GitHub</span>
+      </a>
+    </div>
+  </div>
+</section>
+
+<!-- Terminal Demo -->
+<section class="demo">
+  <div class="container">
+    <div class="terminal" id="terminal">
+      <div class="terminal-bar">
+        <div class="terminal-dot r"></div>
+        <div class="terminal-dot y"></div>
+        <div class="terminal-dot g"></div>
+        <div class="terminal-title">terminal</div>
+      </div>
+      <div class="terminal-body" id="terminalBody" role="img" aria-label="Terminal demo showing on command launching a dev environment">
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Showcase -->
+<section class="showcase">
+  <div class="container">
+    <h2 class="showcase-label" data-i18n="showcase_title">See What Happens</h2>
+    <p class="showcase-sublabel" data-i18n="showcase_sub">One YAML config launches your entire workspace.</p>
+    <div class="showcase-grid">
+
+      <!-- tmux mockup -->
+      <div>
+        <div class="mock-window">
+          <div class="mock-bar">
+            <div class="terminal-dot r"></div>
+            <div class="terminal-dot y"></div>
+            <div class="terminal-dot g"></div>
+            <div class="mock-bar-title">iTerm2 — myproject</div>
+          </div>
+          <div class="tmux-body">
+            <div class="tmux-pane">
+              <div class="tmux-pane-tag">api-server</div>
+              <div><span class="d">$</span> <span class="t">watchexec -e py -- uv run python src/main.py dev</span></div>
+              <div class="c">INFO</span>:  api server on <span class="t">0.0.0.0:8080</span></div>
+              <div class="d">INFO:  watching for .py changes...</div>
+            </div>
+            <div class="tmux-pane">
+              <div class="tmux-pane-tag">web-gateway</div>
+              <div><span class="d">$</span> <span class="t">pnpm dev</span></div>
+              <div class="d">ready - started server on 0.0.0.0:3001</div>
+              <div class="g">compiled successfully in 0.8s</div>
+              <div class="d">watching for file changes...</div>
+            </div>
+            <div class="tmux-pane tmux-pane-full">
+              <div class="tmux-pane-tag">dashboard</div>
+              <div><span class="d">$</span> <span class="t">pnpm dev</span></div>
+              <div class="d">VITE v5.4.1  ready in <span class="g">320ms</span></div>
+              <div class="d">Local:   <span class="c">http://localhost:5173/</span></div>
+            </div>
+          </div>
+          <div class="tmux-status">
+            <span class="tmux-status-left">myproject</span>
+            <span class="tmux-status-mid">
+              <span class="tmux-status-tab active">0:api-server</span>
+              <span class="tmux-status-tab">1:web-gateway</span>
+              <span class="tmux-status-tab">2:dashboard</span>
+            </span>
+            <span class="tmux-status-right">12:34</span>
+          </div>
+        </div>
+        <p class="showcase-caption" data-i18n="caption_terminal">Auto-split terminal panes with running processes</p>
+      </div>
+
+      <!-- Editor mockup -->
+      <div>
+        <div class="mock-window">
+          <div class="mock-bar">
+            <div class="terminal-dot r"></div>
+            <div class="terminal-dot y"></div>
+            <div class="terminal-dot g"></div>
+            <div class="mock-bar-title">Visual Studio Code — myproject (Workspace)</div>
+          </div>
+          <div class="editor-body">
+            <div class="editor-sidebar">
+              <div class="editor-explorer-header">EXPLORER</div>
+              <div class="editor-workspace-label">MYPROJECT (WORKSPACE)</div>
+              <div class="editor-section">
+                <div class="editor-section-title">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+                  <svg class="folder-icon" viewBox="0 0 24 24" fill="currentColor" style="width:12px;height:12px"><path d="M2 6a2 2 0 012-2h5l2 2h9a2 2 0 012 2v10a2 2 0 01-2 2H4a2 2 0 01-2-2V6z"/></svg>
+                  frontend
+                </div>
+                <div class="editor-file">
+                  <svg class="folder-icon" viewBox="0 0 24 24" fill="currentColor"><path d="M2 6a2 2 0 012-2h5l2 2h9a2 2 0 012 2v10a2 2 0 01-2 2H4a2 2 0 01-2-2V6z"/></svg>
+                  src
+                </div>
+                <div class="editor-file" style="padding-left:36px">
+                  <svg class="folder-icon" viewBox="0 0 24 24" fill="currentColor"><path d="M2 6a2 2 0 012-2h5l2 2h9a2 2 0 012 2v10a2 2 0 01-2 2H4a2 2 0 01-2-2V6z"/></svg>
+                  components
+                </div>
+                <div class="editor-file active" style="padding-left:36px">
+                  <svg class="ts-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M12 8v8M8 12h8"/></svg>
+                  App.tsx
+                </div>
+                <div class="editor-file">
+                  <svg class="json-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h16M4 18h10"/></svg>
+                  package.json
+                </div>
+              </div>
+              <div class="editor-section">
+                <div class="editor-section-title">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+                  <svg class="folder-icon" viewBox="0 0 24 24" fill="currentColor" style="width:12px;height:12px"><path d="M2 6a2 2 0 012-2h5l2 2h9a2 2 0 012 2v10a2 2 0 01-2 2H4a2 2 0 01-2-2V6z"/></svg>
+                  backend
+                </div>
+                <div class="editor-file">
+                  <svg class="py-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M12 8v8M8 12h8"/></svg>
+                  main.py
+                </div>
+                <div class="editor-file">
+                  <svg class="folder-icon" viewBox="0 0 24 24" fill="currentColor"><path d="M2 6a2 2 0 012-2h5l2 2h9a2 2 0 012 2v10a2 2 0 01-2 2H4a2 2 0 01-2-2V6z"/></svg>
+                  routes
+                </div>
+                <div class="editor-file">
+                  <svg class="py-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M12 8v8M8 12h8"/></svg>
+                  models.py
+                </div>
+                <div class="editor-file">
+                  <svg class="md-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h16M4 18h10"/></svg>
+                  README.md
+                </div>
+              </div>
+            </div>
+            <div class="editor-main">
+              <div class="editor-tabs">
+                <div class="editor-tab active">
+                  <svg class="ts-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M12 8v8M8 12h8"/></svg>
+                  App.tsx
+                  <span class="editor-tab-path">frontend/src</span>
+                </div>
+                <div class="editor-tab">
+                  <svg class="py-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M12 8v8M8 12h8"/></svg>
+                  main.py
+                  <span class="editor-tab-path">backend</span>
+                </div>
+              </div>
+              <div class="editor-breadcrumb">frontend &rsaquo; src &rsaquo; App.tsx</div>
+              <div class="editor-code">
+                <div><span class="ln">1</span><span class="kw">import</span> { <span class="tp">Router</span> } <span class="kw">from</span> <span class="str">'react-router'</span></div>
+                <div><span class="ln">2</span><span class="kw">import</span> { <span class="tp">AuthProvider</span> } <span class="kw">from</span> <span class="str">'./auth'</span></div>
+                <div><span class="ln">3</span></div>
+                <div><span class="ln">4</span><span class="kw">export default function</span> <span class="fn">App</span>() {</div>
+                <div><span class="ln">5</span>  <span class="kw">return</span> (</div>
+                <div><span class="ln">6</span>    &lt;<span class="tp">AuthProvider</span>&gt;</div>
+                <div><span class="ln">7</span>      &lt;<span class="tp">Router</span> /&gt;</div>
+                <div><span class="ln">8</span>    &lt;/<span class="tp">AuthProvider</span>&gt;</div>
+                <div><span class="ln">9</span>  )</div>
+                <div><span class="ln">10</span>}</div>
+              </div>
+            </div>
+          </div>
+          <div class="editor-statusbar">
+            <span class="editor-statusbar-left">
+              <span class="editor-statusbar-item branch">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:11px;height:11px"><circle cx="18" cy="18" r="3"/><circle cx="6" cy="6" r="3"/><path d="M13 6h3a2 2 0 0 1 2 2v7"/><path d="M6 9v12"/></svg>
+                feat/auth
+              </span>
+            </span>
+            <span class="editor-statusbar-right">
+              <span class="editor-statusbar-item">TypeScript JSX</span>
+              <span class="editor-statusbar-item">UTF-8</span>
+            </span>
+          </div>
+        </div>
+        <p class="showcase-caption" data-i18n="caption_editor">VS Code opens in workspace mode with all project folders</p>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+<!-- Features -->
+<section class="features">
+  <div class="container">
+    <h2 class="section-title" data-i18n="section_why">Why <code>on</code>?</h2>
+    <div class="features-grid">
+
+      <div class="feature-card">
+        <div class="feature-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/>
+          </svg>
+        </div>
+        <h3 class="feature-title" data-i18n="feat_terminal">Terminal Panes</h3>
+        <p class="feature-desc" data-i18n="feat_terminal_desc">iTerm2 or tmux, auto split & name.</p>
+      </div>
+
+      <div class="feature-card">
+        <div class="feature-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/>
+          </svg>
+        </div>
+        <h3 class="feature-title" data-i18n="feat_layout">Smart Layouts</h3>
+        <p class="feature-desc" data-i18n="feat_layout_desc">Vertical or grid, one line config.</p>
+      </div>
+
+      <div class="feature-card">
+        <div class="feature-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M16 18l6-6-6-6"/><path d="M8 6l-6 6 6 6"/>
+          </svg>
+        </div>
+        <h3 class="feature-title" data-i18n="feat_editor">Editor Integration</h3>
+        <p class="feature-desc" data-i18n="feat_editor_desc">Auto-open VS Code / Cursor with workspace.</p>
+      </div>
+
+      <div class="feature-card">
+        <div class="feature-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>
+          </svg>
+        </div>
+        <h3 class="feature-title" data-i18n="feat_browser">Browser Tabs</h3>
+        <p class="feature-desc" data-i18n="feat_browser_desc">Auto-open all dev URLs.</p>
+      </div>
+
+      <div class="feature-card">
+        <div class="feature-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+          </svg>
+        </div>
+        <h3 class="feature-title" data-i18n="feat_port">Port Detection</h3>
+        <p class="feature-desc" data-i18n="feat_port_desc">Auto-detect port conflicts before launch.</p>
+      </div>
+
+      <div class="feature-card">
+        <div class="feature-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="18" cy="18" r="3"/><circle cx="6" cy="6" r="3"/><path d="M13 6h3a2 2 0 0 1 2 2v7"/><path d="M6 9v12"/>
+          </svg>
+        </div>
+        <h3 class="feature-title" data-i18n="feat_git">Git Status</h3>
+        <p class="feature-desc" data-i18n="feat_git_desc">Warn about uncommitted changes before launch.</p>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+<!-- Install -->
+<section class="install">
+  <div class="container">
+    <h2 class="section-title" data-i18n="install_title">Get Started in Seconds</h2>
+    <div class="install-cmds">
+      <div class="install-line">
+        <code>brew tap rickyshin93/tap</code>
+        <button class="copy-btn" data-copy="brew tap rickyshin93/tap" aria-label="Copy tap command">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+          <span class="copy-feedback" data-i18n="copied">Copied!</span>
+        </button>
+      </div>
+      <div class="install-line">
+        <code>brew install rickyshin93/tap/on</code>
+        <button class="copy-btn" data-copy="brew install rickyshin93/tap/on" aria-label="Copy install command">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+          <span class="copy-feedback" data-i18n="copied">Copied!</span>
+        </button>
+      </div>
+    </div>
+    <p class="install-alt"><span data-i18n="install_source">Or build from source:</span> <code>cargo install --path .</code></p>
+  </div>
+</section>
+
+<!-- Example Config -->
+<section class="example">
+  <div class="container">
+    <h2 class="section-title" data-i18n="example_title">Quick Start Config</h2>
+    <div class="example-window">
+      <div class="example-bar">
+        <div class="terminal-dot r"></div>
+        <div class="terminal-dot y"></div>
+        <div class="terminal-dot g"></div>
+        <div class="example-bar-title">~/.on/myproject.yaml</div>
+      </div>
+      <div class="example-body" id="exampleBody">
+        <button class="example-copy copy-btn" id="yamlCopyBtn" aria-label="Copy YAML config">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+          <span class="copy-feedback" data-i18n="copied">Copied!</span>
+        </button>
+<div><span class="yk">name:</span> <span class="yv">myproject</span></div>
+<div></div>
+<div><span class="yk">iterm:</span>                    <span class="yc"># or tmux</span></div>
+<div>  <span class="yk">layout:</span> <span class="yv">vertical</span></div>
+<div>  <span class="yk">panes:</span></div>
+<div>    - <span class="yk">name:</span> <span class="yv">api-server</span></div>
+<div>      <span class="yk">dir:</span>  <span class="ys">~/projects/myproject/api</span></div>
+<div>      <span class="yk">cmd:</span>  <span class="ys">watchexec -e py -- uv run python src/main.py dev</span></div>
+<div>    - <span class="yk">name:</span> <span class="yv">web-gateway</span></div>
+<div>      <span class="yk">dir:</span>  <span class="ys">~/projects/myproject/gateway</span></div>
+<div>      <span class="yk">cmd:</span>  <span class="ys">pnpm dev</span></div>
+<div>    - <span class="yk">name:</span> <span class="yv">dashboard</span></div>
+<div>      <span class="yk">dir:</span>  <span class="ys">~/projects/myproject/dashboard</span></div>
+<div>      <span class="yk">cmd:</span>  <span class="ys">pnpm dev</span></div>
+<div></div>
+<div><span class="yk">editor:</span></div>
+<div>  <span class="yk">cmd:</span> <span class="yv">code</span></div>
+<div>  <span class="yk">workspace:</span> <span class="ys">~/.on/myproject.code-workspace</span></div>
+      </div>
+    </div>
+    <p class="example-hint" data-i18n="example_hint">Run <code>on new myproject</code> to generate, then <code>on myproject</code> to launch.</p>
+  </div>
+</section>
+
+<!-- Footer -->
+<footer>
+  <div class="container">
+    <span>MIT License</span>
+    <span>&middot;</span>
+    <a href="https://github.com/rickyshin93/launch" target="_blank" rel="noopener">GitHub</a>
+    <span>&middot;</span>
+    <span>v0.3.3</span>
+  </div>
+</footer>
+
+<script>
+// ---- i18n ----
+const i18n = {
+  en: {
+    subtitle: 'One command. Your entire dev environment.',
+    section_why: 'Why <code>on</code>?',
+    feat_terminal: 'Terminal Panes',
+    feat_terminal_desc: 'iTerm2 or tmux, auto split & name.',
+    feat_layout: 'Smart Layouts',
+    feat_layout_desc: 'Vertical or grid, one line config.',
+    feat_editor: 'Editor Integration',
+    feat_editor_desc: 'Auto-open VS Code / Cursor with workspace.',
+    feat_browser: 'Browser Tabs',
+    feat_browser_desc: 'Auto-open all dev URLs.',
+    feat_port: 'Port Detection',
+    feat_port_desc: 'Auto-detect port conflicts before launch.',
+    feat_git: 'Git Status',
+    feat_git_desc: 'Warn about uncommitted changes before launch.',
+    showcase_title: 'See What Happens',
+    showcase_sub: 'One YAML config launches your entire workspace.',
+    caption_terminal: 'Auto-split terminal panes with running processes',
+    caption_editor: 'VS Code opens in workspace mode with all project folders',
+    example_title: 'Quick Start Config',
+    example_hint: 'Run <code>on new myproject</code> to generate, then <code>on myproject</code> to launch.',
+    install_title: 'Get Started in Seconds',
+    install_source: 'Or build from source:',
+    copied: 'Copied!'
+  },
+  zh: {
+    subtitle: '\u4e00\u6761\u547d\u4ee4\uff0c\u6062\u590d\u6574\u4e2a\u5f00\u53d1\u73af\u5883\u3002',
+    showcase_title: '\u770b\u770b\u4f1a\u53d1\u751f\u4ec0\u4e48',
+    showcase_sub: '\u4e00\u4e2a YAML \u914d\u7f6e\uff0c\u542f\u52a8\u6574\u4e2a\u5de5\u4f5c\u7a7a\u95f4\u3002',
+    caption_terminal: '\u81ea\u52a8\u5206\u5c4f\u7ec8\u7aef\u9762\u677f\uff0c\u8fdb\u7a0b\u540c\u65f6\u8fd0\u884c',
+    caption_editor: 'VS Code \u4ee5 workspace \u6a21\u5f0f\u6253\u5f00\u6240\u6709\u9879\u76ee\u6587\u4ef6\u5939',
+    example_title: '\u5feb\u901f\u5f00\u59cb\u914d\u7f6e',
+    example_hint: '\u8fd0\u884c <code>on new myproject</code> \u751f\u6210\u914d\u7f6e\uff0c\u7136\u540e <code>on myproject</code> \u542f\u52a8\u3002',
+    section_why: '\u4e3a\u4ec0\u4e48\u9009 <code>on</code>\uff1f',
+    feat_terminal: '\u7ec8\u7aef\u9762\u677f',
+    feat_terminal_desc: 'iTerm2 \u6216 tmux\uff0c\u81ea\u52a8\u5206\u5c4f\u547d\u540d\u3002',
+    feat_layout: '\u667a\u80fd\u5e03\u5c40',
+    feat_layout_desc: 'vertical \u6216 grid\uff0c\u4e00\u884c\u914d\u7f6e\u3002',
+    feat_editor: '\u7f16\u8f91\u5668\u96c6\u6210',
+    feat_editor_desc: '\u81ea\u52a8\u6253\u5f00 VS Code / Cursor + workspace\u3002',
+    feat_browser: '\u6d4f\u89c8\u5668\u6807\u7b7e',
+    feat_browser_desc: '\u81ea\u52a8\u6253\u5f00\u6240\u6709\u5f00\u53d1\u76f8\u5173 URL\u3002',
+    feat_port: '\u7aef\u53e3\u68c0\u6d4b',
+    feat_port_desc: '\u81ea\u52a8\u68c0\u6d4b\u7aef\u53e3\u51b2\u7a81\uff0c\u542f\u52a8\u524d\u9884\u8b66\u3002',
+    feat_git: 'Git \u72b6\u6001',
+    feat_git_desc: '\u542f\u52a8\u524d\u63d0\u9192\u672a\u63d0\u4ea4\u7684\u66f4\u6539\u3002',
+    install_title: '\u51e0\u79d2\u949f\u5373\u53ef\u4e0a\u624b',
+    install_source: '\u6216\u4ece\u6e90\u7801\u6784\u5efa\uff1a',
+    copied: '\u5df2\u590d\u5236\uff01'
+  }
+};
+
+let lang = localStorage.getItem('on-lang') || 'en';
+
+function applyLang() {
+  document.documentElement.lang = lang;
+  document.querySelectorAll('[data-i18n]').forEach(el => {
+    const key = el.getAttribute('data-i18n');
+    if (i18n[lang][key]) {
+      const hasHtml = i18n[lang][key].includes('<');
+      if (hasHtml) {
+        el.innerHTML = i18n[lang][key];
+      } else {
+        el.textContent = i18n[lang][key];
+      }
+    }
+  });
+  document.getElementById('langToggle').textContent = lang === 'en' ? 'EN / \u4e2d\u6587' : '\u4e2d\u6587 / EN';
+}
+
+document.getElementById('langToggle').addEventListener('click', () => {
+  lang = lang === 'en' ? 'zh' : 'en';
+  localStorage.setItem('on-lang', lang);
+  applyLang();
+});
+
+applyLang();
+
+// ---- Copy buttons ----
+document.querySelectorAll('.copy-btn[data-copy]').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const text = btn.getAttribute('data-copy');
+    navigator.clipboard.writeText(text).then(() => {
+      const fb = btn.querySelector('.copy-feedback');
+      fb.classList.add('show');
+      setTimeout(() => fb.classList.remove('show'), 1500);
+    });
+  });
+});
+
+// YAML copy
+const yamlCopyBtn = document.getElementById('yamlCopyBtn');
+if (yamlCopyBtn) {
+  yamlCopyBtn.addEventListener('click', () => {
+    const body = document.getElementById('exampleBody');
+    const lines = body.querySelectorAll(':scope > div');
+    const yaml = Array.from(lines).map(l => l.textContent).join('\n');
+    navigator.clipboard.writeText(yaml).then(() => {
+      const fb = yamlCopyBtn.querySelector('.copy-feedback');
+      fb.classList.add('show');
+      setTimeout(() => fb.classList.remove('show'), 1500);
+    });
+  });
+}
+
+// ---- Terminal animation ----
+const termLines = [
+  { type: 'input', text: '$ on myproject' },
+  { type: 'output', text: '\u2713 Launching tmux session...', cls: 'check' },
+  { type: 'output', text: '\u2713 Opening editor...', cls: 'check' },
+  { type: 'output', text: '\u2713 Opening browser tabs...', cls: 'check' },
+  { type: 'output', text: '\u2713 Checking ports...', cls: 'check' },
+  { type: 'output', text: '\u26a1 Ready in 1.2s', cls: 'highlight' },
+];
+
+const termBody = document.getElementById('terminalBody');
+let animRunning = false;
+
+function typeText(el, text, speed) {
+  return new Promise(resolve => {
+    let i = 0;
+    const cursor = document.createElement('span');
+    cursor.className = 'cursor';
+    el.appendChild(cursor);
+    function tick() {
+      if (i < text.length) {
+        cursor.before(document.createTextNode(text[i]));
+        i++;
+        setTimeout(tick, speed);
+      } else {
+        cursor.remove();
+        resolve();
+      }
+    }
+    tick();
+  });
+}
+
+function showLine(text, cls) {
+  return new Promise(resolve => {
+    const div = document.createElement('div');
+    div.className = 'terminal-line';
+    const span = document.createElement('span');
+    span.className = cls;
+    span.textContent = text;
+    div.appendChild(span);
+    termBody.appendChild(div);
+    requestAnimationFrame(() => {
+      div.classList.add('visible');
+      setTimeout(resolve, 400);
+    });
+  });
+}
+
+async function runAnimation() {
+  if (animRunning) return;
+  animRunning = true;
+
+  while (true) {
+    termBody.innerHTML = '';
+
+    // Type input line
+    const inputLine = document.createElement('div');
+    inputLine.className = 'terminal-line visible';
+    const prompt = document.createElement('span');
+    prompt.className = 'prompt';
+    const cmd = document.createElement('span');
+    cmd.className = 'cmd';
+    inputLine.appendChild(prompt);
+    inputLine.appendChild(cmd);
+    termBody.appendChild(inputLine);
+
+    await typeText(prompt, '$ ', 80);
+    await typeText(cmd, 'on myproject', 60);
+    await new Promise(r => setTimeout(r, 500));
+
+    // Output lines
+    for (let i = 1; i < termLines.length; i++) {
+      await showLine(termLines[i].text, termLines[i].cls);
+    }
+
+    await new Promise(r => setTimeout(r, 3000));
+  }
+}
+
+// Intersection Observer
+const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+if (reducedMotion) {
+  // Static fallback
+  termLines.forEach(line => {
+    const div = document.createElement('div');
+    div.className = 'terminal-line visible';
+    if (line.type === 'input') {
+      div.innerHTML = '<span class="prompt">$ </span><span class="cmd">on myproject</span>';
+    } else {
+      const span = document.createElement('span');
+      span.className = line.cls;
+      span.textContent = line.text;
+      div.appendChild(span);
+    }
+    termBody.appendChild(div);
+  });
+} else {
+  const observer = new IntersectionObserver((entries) => {
+    entries.forEach(entry => {
+      if (entry.isIntersecting) {
+        runAnimation();
+        observer.disconnect();
+      }
+    });
+  }, { threshold: 0.3 });
+  observer.observe(document.getElementById('terminal'));
+}
+</script>
+</body>
+</html>
