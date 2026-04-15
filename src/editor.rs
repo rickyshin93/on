@@ -1,17 +1,19 @@
 use anyhow::{Context, Result};
 use std::process::Command;
 
-use crate::config::EditorConfig;
+use crate::config::{self, EditorConfig};
 
 /// Open editor with workspace file or configured folders.
 /// Workspace takes priority over folders if both are set.
-pub fn open(editor: Option<&EditorConfig>) -> Result<()> {
+/// When only folders are configured, a `.code-workspace` file is auto-created.
+pub fn open(editor: Option<&EditorConfig>, project: &str) -> Result<()> {
     let Some(editor) = editor else {
         return Ok(());
     };
 
     let cmd = editor.cmd.as_deref().unwrap_or("code");
 
+    // Use explicit workspace if configured
     if let Some(ref workspace) = editor.workspace {
         let expanded = shellexpand::tilde(workspace).to_string();
         Command::new(cmd)
@@ -26,8 +28,23 @@ pub fn open(editor: Option<&EditorConfig>) -> Result<()> {
         _ => return Ok(()),
     };
 
+    // Auto-create workspace file from folders
+    let ws_path = config::base_dir().join(format!("{project}.code-workspace"));
+    if !ws_path.exists() {
+        let entries: Vec<String> = folders
+            .iter()
+            .map(|f| format!("\t\t{{\n\t\t\t\"path\": \"{f}\"\n\t\t}}"))
+            .collect();
+        let content = format!(
+            "{{\n\t\"folders\": [\n{}\n\t],\n\t\"settings\": {{}}\n}}\n",
+            entries.join(",\n")
+        );
+        std::fs::write(&ws_path, content)
+            .with_context(|| format!("Failed to create workspace {}", ws_path.display()))?;
+    }
+
     Command::new(cmd)
-        .args(folders)
+        .arg(ws_path.to_str().unwrap())
         .spawn()
         .with_context(|| format!("Failed to launch editor '{cmd}'"))?;
 
@@ -40,7 +57,7 @@ mod tests {
 
     #[test]
     fn none_editor_is_ok() {
-        assert!(open(None).is_ok());
+        assert!(open(None, "test").is_ok());
     }
 
     #[test]
@@ -50,7 +67,7 @@ mod tests {
             folders: Some(vec![]),
             workspace: None,
         };
-        assert!(open(Some(&editor)).is_ok());
+        assert!(open(Some(&editor), "test").is_ok());
     }
 
     #[test]
@@ -60,6 +77,6 @@ mod tests {
             folders: None,
             workspace: None,
         };
-        assert!(open(Some(&editor)).is_ok());
+        assert!(open(Some(&editor), "test").is_ok());
     }
 }

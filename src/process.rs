@@ -120,7 +120,7 @@ pub fn run(name: &str) -> Result<()> {
     }
 
     // Open editor
-    editor::open(cfg.editor.as_ref())?;
+    editor::open(cfg.editor.as_ref(), name)?;
 
     // Open browser
     browser::open(cfg.browser.as_ref())?;
