@@ -132,7 +132,10 @@ pub fn run(name: &str) -> Result<()> {
 
     // For tmux, attach last (this blocks)
     if terminal_type == "tmux" {
-        println!("{}", format!("Attaching to tmux session for '{name}'...").green());
+        println!(
+            "{}",
+            format!("Attaching to tmux session for '{name}'...").green()
+        );
         tmux::attach(name)?;
     } else {
         println!("{}", format!("Project '{name}' is on!").green());

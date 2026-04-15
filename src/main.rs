@@ -14,11 +14,7 @@ use clap_complete::{generate, Shell};
 use dialoguer::FuzzySelect;
 
 #[derive(Parser)]
-#[command(
-    name = "on",
-    version,
-    about = "One-command dev environment launcher"
-)]
+#[command(name = "on", version, about = "One-command dev environment launcher")]
 struct Cli {
     /// Project name to launch
     project: Option<String>,
