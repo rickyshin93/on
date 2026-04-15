@@ -4,8 +4,8 @@ version = "0.3.3"
 edition = "2021"
 license = "MIT"
 description = "A CLI tool to launch your dev environment with one command"
-repository = "https://github.com/rickyshin93/launch"
-homepage = "https://github.com/rickyshin93/launch"
+repository = "https://github.com/rickyshin93/on"
+homepage = "https://github.com/rickyshin93/on"
 
 [lib]
 name = "on"
