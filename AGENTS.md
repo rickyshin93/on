@@ -41,6 +41,23 @@ src/
 - **tmux** — cross-platform, uses `tmux` CLI commands
 - Config `terminal.type` selects backend (default: `iterm` on macOS, `tmux` on Linux)
 
+## Release
+
+发版使用 `cargo-release`，一条命令完成版本 bump、commit、tag、push：
+
+```bash
+cargo release patch --execute --no-confirm   # 0.3.2 → 0.3.3
+cargo release minor --execute --no-confirm   # 0.3.2 → 0.4.0
+cargo release major --execute --no-confirm   # 0.3.2 → 1.0.0
+```
+
+推送 tag 后 CI (`.github/workflows/release.yml`) 自动完成：
+1. 构建 macOS (aarch64) + Linux (x86_64) 二进制
+2. 上传 `.tar.gz` + `.sha256` 到 GitHub Release
+3. 更新 `rickyshin93/homebrew-tap` 仓库中的 `Formula/on.rb`
+
+**不需要手动更新 homebrew formula，CI 全自动处理。**
+
 ## Notes
 
 - Config path: `~/.on/<project>.yaml`
