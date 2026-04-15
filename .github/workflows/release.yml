@@ -103,4 +103,4 @@ jobs:
             -f content="$FORMULA_CONTENT" \
             -f sha="$EXISTING_SHA"
         env:
-          GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          GH_TOKEN: ${{ secrets.HOMEBREW_TAP_RELEASE }}
