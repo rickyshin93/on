@@ -53,6 +53,7 @@ name: myproject
 terminal:
   type: tmux    # iterm | tmux (default: iterm on macOS, tmux on Linux)
   layout: vertical  # vertical (default) | grid
+  max_panes_per_tab: 4  # max panes per tab (default 4, range 2-8)
   panes:
     - name: frontend
       dir: ~/projects/myproject/frontend
@@ -77,6 +78,7 @@ browser:
 
 - **Terminal Panes** — iTerm2 (macOS) or tmux (macOS/Linux), with auto-naming
 - **Layouts** — `vertical` (side-by-side, default) or `grid` (tiled)
+- **Multi-Tab** — Automatically splits panes across tabs when exceeding `max_panes_per_tab` (default 4)
 - **Editor** — Opens configured editor with folders or workspace file
 - **Browser** — Opens URLs in default browser
 - **Port Conflict Detection** — Auto-detects ports from URLs/commands, warns on conflicts

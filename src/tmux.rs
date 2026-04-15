@@ -3,8 +3,14 @@ use std::process::Command;
 
 use crate::config::PaneConfig;
 
-/// Create a tmux session with panes arranged according to layout (non-blocking)
-pub fn open_panes(project: &str, panes: &[PaneConfig], layout: &str) -> Result<()> {
+/// Create a tmux session with panes arranged according to layout (non-blocking).
+/// When `max_per_tab` is set, panes are split across multiple tmux windows.
+pub fn open_panes(
+    project: &str,
+    panes: &[PaneConfig],
+    layout: &str,
+    max_per_tab: Option<usize>,
+) -> Result<()> {
     if panes.is_empty() {
         return Ok(());
     }
@@ -16,39 +22,55 @@ pub fn open_panes(project: &str, panes: &[PaneConfig], layout: &str) -> Result<(
         .args(["kill-session", "-t", &session])
         .output();
 
-    // Create new detached session with first pane
-    let status = Command::new("tmux")
-        .args(["new-session", "-d", "-s", &session, "-n", project])
-        .status()
-        .context("Failed to start tmux. Is tmux installed?")?;
+    let limit = max_per_tab.unwrap_or(panes.len());
+    let chunks: Vec<&[PaneConfig]> = panes.chunks(limit).collect();
 
-    if !status.success() {
-        bail!("Failed to create tmux session '{session}'");
-    }
+    for (win_idx, chunk) in chunks.iter().enumerate() {
+        if win_idx == 0 {
+            let status = Command::new("tmux")
+                .args(["new-session", "-d", "-s", &session, "-n", project])
+                .status()
+                .context("Failed to start tmux. Is tmux installed?")?;
+            if !status.success() {
+                bail!("Failed to create tmux session '{session}'");
+            }
+        } else {
+            let _ = Command::new("tmux")
+                .args([
+                    "new-window",
+                    "-t",
+                    &session,
+                    "-n",
+                    &format!("{project}-{}", win_idx + 1),
+                ])
+                .status();
+        }
 
-    // Split additional panes
-    for _ in 1..panes.len() {
+        // Split additional panes
+        let win_target = format!("{session}:{win_idx}");
+        for _ in 1..chunk.len() {
+            let _ = Command::new("tmux")
+                .args(["split-window", "-t", &win_target])
+                .status();
+        }
+
+        // Apply layout
+        let tmux_layout = match layout {
+            "grid" => "tiled",
+            _ => "even-horizontal",
+        };
         let _ = Command::new("tmux")
-            .args(["split-window", "-t", &session])
+            .args(["select-layout", "-t", &win_target, tmux_layout])
             .status();
-    }
 
-    // Apply layout
-    let tmux_layout = match layout {
-        "grid" => "tiled",
-        _ => "even-horizontal",
-    };
-    let _ = Command::new("tmux")
-        .args(["select-layout", "-t", &session, tmux_layout])
-        .status();
-
-    // Send commands to each pane
-    for (i, pane) in panes.iter().enumerate() {
-        let target = format!("{session}:0.{i}");
-        let cmd = pane.build_command(project);
-        let _ = Command::new("tmux")
-            .args(["send-keys", "-t", &target, &cmd, "Enter"])
-            .status();
+        // Send commands to each pane
+        for (i, pane) in chunk.iter().enumerate() {
+            let target = format!("{session}:{win_idx}.{i}");
+            let cmd = pane.build_command(project);
+            let _ = Command::new("tmux")
+                .args(["send-keys", "-t", &target, &cmd, "Enter"])
+                .status();
+        }
     }
 
     Ok(())
@@ -98,6 +120,6 @@ mod tests {
 
     #[test]
     fn empty_panes_is_ok() {
-        assert!(open_panes("proj", &[], "vertical").is_ok());
+        assert!(open_panes("proj", &[], "vertical", None).is_ok());
     }
 }

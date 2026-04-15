@@ -101,9 +101,14 @@ pub fn run(name: &str) -> Result<()> {
         let layout = term_cfg.layout.as_deref().unwrap_or("vertical");
         terminal_type.clone_from(&term_cfg.terminal_type);
 
+        let max_per_tab = Some(term_cfg.max_panes_per_tab.unwrap_or(4));
         match term_cfg.terminal_type.as_str() {
-            "tmux" => tmux::open_panes(name, &term_cfg.panes, layout)?,
-            _ => iterm::open_panes(name, &term_cfg.panes, layout)?,
+            "tmux" => {
+                tmux::open_panes(name, &term_cfg.panes, layout, max_per_tab)?;
+            }
+            _ => {
+                iterm::open_panes(name, &term_cfg.panes, layout, max_per_tab)?;
+            }
         }
 
         // Collect PIDs from pid files

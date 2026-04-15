@@ -27,6 +27,7 @@ pub struct TerminalConfig {
     #[serde(rename = "type", default = "default_terminal_type")]
     pub terminal_type: String,
     pub layout: Option<String>,
+    pub max_panes_per_tab: Option<usize>,
     pub panes: Vec<PaneConfig>,
 }
 
@@ -34,6 +35,7 @@ pub struct TerminalConfig {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct LegacyItermConfig {
     pub layout: Option<String>,
+    pub max_panes_per_tab: Option<usize>,
     pub panes: Vec<PaneConfig>,
 }
 
@@ -106,7 +108,19 @@ pub fn load(name: &str) -> Result<Config> {
         .with_context(|| format!("Failed to parse {}", path.display()))?;
     let mut config = resolve_config(raw);
     expand_paths(&mut config);
+    validate_config(&config)?;
     Ok(config)
+}
+
+fn validate_config(config: &Config) -> Result<()> {
+    if let Some(ref term) = config.terminal {
+        if let Some(max) = term.max_panes_per_tab {
+            if !(2..=8).contains(&max) {
+                bail!("max_panes_per_tab must be between 2 and 8, got {max}");
+            }
+        }
+    }
+    Ok(())
 }
 
 /// Resolve `RawConfig` into `Config`: merge legacy `iterm:` into `terminal:`
@@ -116,6 +130,7 @@ fn resolve_config(raw: RawConfig) -> Config {
         (None, Some(legacy)) => Some(TerminalConfig {
             terminal_type: "iterm".to_string(),
             layout: legacy.layout,
+            max_panes_per_tab: legacy.max_panes_per_tab,
             panes: legacy.panes,
         }),
         (None, None) => None,
@@ -178,6 +193,7 @@ pub fn create_template(name: &str) -> Result<PathBuf> {
 terminal:
   type: {terminal_type}       # iterm (macOS default) | tmux (Linux default)
   layout: vertical             # vertical (side-by-side) | grid (tiled)
+  # max_panes_per_tab: 4       # max panes per tab (default 4, range 2-8)
   panes:
     - name: server
       dir: ~/projects/{name}
@@ -329,6 +345,7 @@ iterm:
             terminal: Some(TerminalConfig {
                 terminal_type: "tmux".to_string(),
                 layout: None,
+                max_panes_per_tab: None,
                 panes: vec![PaneConfig {
                     name: "dev".to_string(),
                     dir: "~/projects/test".to_string(),
