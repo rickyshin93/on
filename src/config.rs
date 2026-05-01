@@ -11,6 +11,7 @@ struct RawConfig {
     pub iterm: Option<LegacyItermConfig>,
     pub editor: Option<EditorConfig>,
     pub browser: Option<Vec<String>>,
+    pub checks: Option<ChecksConfig>,
 }
 
 /// Resolved config used by the rest of the application
@@ -20,6 +21,13 @@ pub struct Config {
     pub terminal: Option<TerminalConfig>,
     pub editor: Option<EditorConfig>,
     pub browser: Option<Vec<String>>,
+    pub checks: Option<ChecksConfig>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ChecksConfig {
+    /// Warn and prompt when repos have uncommitted changes (default: false)
+    pub dirty_git: Option<bool>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -141,6 +149,7 @@ fn resolve_config(raw: RawConfig) -> Config {
         terminal,
         editor: raw.editor,
         browser: raw.browser,
+        checks: raw.checks,
     }
 }
 
@@ -222,6 +231,10 @@ editor:
 #   - http://localhost:3000
 #   - http://localhost:8080/docs
 #   - https://github.com/you/{name}
+
+# Checks — optional startup warnings
+# checks:
+#   dirty_git: true   # warn and prompt when repos have uncommitted changes
 "#,
     );
     fs::write(&path, &template).with_context(|| format!("Failed to write {}", path.display()))?;

@@ -32,25 +32,32 @@ pub fn run(name: &str) -> Result<()> {
         stop(name)?;
     }
 
-    // Git status check
-    if let Some(ref term_cfg) = cfg.terminal {
-        let dirs: Vec<String> = term_cfg.panes.iter().map(|p| p.dir.clone()).collect();
-        let dirty = git::check_status(&dirs);
-        if !dirty.is_empty() {
-            for d in &dirty {
-                println!(
-                    "{}",
-                    format!("  {} has {} uncommitted file(s)", d.dir, d.file_count).yellow()
-                );
-            }
-            print!("Continue? [Y/n] ");
-            io::stdout().flush().unwrap();
-            let mut input = String::new();
-            io::stdin().read_line(&mut input).unwrap();
-            let input = input.trim().to_lowercase();
-            if input == "n" || input == "no" {
-                println!("Aborted.");
-                return Ok(());
+    // Git status check (only when checks.dirty_git: true in config)
+    let dirty_git_enabled = cfg
+        .checks
+        .as_ref()
+        .and_then(|c| c.dirty_git)
+        .unwrap_or(false);
+    if dirty_git_enabled {
+        if let Some(ref term_cfg) = cfg.terminal {
+            let dirs: Vec<String> = term_cfg.panes.iter().map(|p| p.dir.clone()).collect();
+            let dirty = git::check_status(&dirs);
+            if !dirty.is_empty() {
+                for d in &dirty {
+                    println!(
+                        "{}",
+                        format!("  {} has {} uncommitted file(s)", d.dir, d.file_count).yellow()
+                    );
+                }
+                print!("Continue? [Y/n] ");
+                io::stdout().flush().unwrap();
+                let mut input = String::new();
+                io::stdin().read_line(&mut input).unwrap();
+                let input = input.trim().to_lowercase();
+                if input == "n" || input == "no" {
+                    println!("Aborted.");
+                    return Ok(());
+                }
             }
         }
     }
