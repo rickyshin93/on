@@ -356,8 +356,7 @@ pub fn doctor() -> Result<()> {
     let tmux_ok = Command::new("tmux")
         .arg("-V")
         .output()
-        .map(|o| o.status.success())
-        .unwrap_or(false);
+        .is_ok_and(|o| o.status.success());
     print_check(tmux_ok, "tmux available");
 
     // Check ~/.on/ directory
@@ -372,16 +371,14 @@ pub fn doctor() -> Result<()> {
     let git_ok = Command::new("git")
         .arg("--version")
         .output()
-        .map(|o| o.status.success())
-        .unwrap_or(false);
+        .is_ok_and(|o| o.status.success());
     print_check(git_ok, "git available");
 
     // Check lsof
     let lsof_ok = Command::new("lsof")
         .arg("-v")
         .output()
-        .map(|_| true)
-        .unwrap_or(false);
+        .is_ok_and(|_| true);
     print_check(lsof_ok, "lsof available");
 
     println!();

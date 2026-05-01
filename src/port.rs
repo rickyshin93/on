@@ -80,8 +80,7 @@ pub fn kill_pid(pid: u32) -> bool {
     Command::new("kill")
         .args(["-9", &pid.to_string()])
         .output()
-        .map(|o| o.status.success())
-        .unwrap_or(false)
+        .is_ok_and(|o| o.status.success())
 }
 
 #[cfg(test)]
