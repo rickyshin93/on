@@ -703,6 +703,36 @@ footer span{margin:0 8px}
         <p class="feature-desc" data-i18n="feat_git_desc">Warn about uncommitted changes before launch.</p>
       </div>
 
+      <div class="feature-card">
+        <div class="feature-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 3h-8l-2 4h12z"/>
+          </svg>
+        </div>
+        <h3 class="feature-title" data-i18n="feat_env">Env Variables</h3>
+        <p class="feature-desc" data-i18n="feat_env_desc">Set per-pane env vars inline in YAML config.</p>
+      </div>
+
+      <div class="feature-card">
+        <div class="feature-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/>
+          </svg>
+        </div>
+        <h3 class="feature-title" data-i18n="feat_hooks">Lifecycle Hooks</h3>
+        <p class="feature-desc" data-i18n="feat_hooks_desc">Run commands pre/post launch and pre-stop.</p>
+      </div>
+
+      <div class="feature-card">
+        <div class="feature-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M16 16v4a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4"/><polyline points="14 4 20 4 20 10"/><line x1="20" y1="4" x2="10" y2="14"/>
+          </svg>
+        </div>
+        <h3 class="feature-title" data-i18n="feat_extends">Config Inheritance</h3>
+        <p class="feature-desc" data-i18n="feat_extends_desc">Share base config across projects with extends.</p>
+      </div>
+
     </div>
   </div>
 </section>
@@ -748,26 +778,34 @@ footer span{margin:0 8px}
           <span class="copy-feedback" data-i18n="copied">Copied!</span>
         </button>
 <div><span class="yk">name:</span> <span class="yv">myproject</span></div>
+<div><span class="yk">extends:</span> <span class="yv">base</span>              <span class="yc"># inherit from base.yaml</span></div>
 <div></div>
-<div><span class="yk">iterm:</span>                    <span class="yc"># or tmux</span></div>
+<div><span class="yk">terminal:</span></div>
+<div>  <span class="yk">type:</span> <span class="yv">iterm</span>              <span class="yc"># iterm | tmux</span></div>
 <div>  <span class="yk">layout:</span> <span class="yv">vertical</span></div>
 <div>  <span class="yk">panes:</span></div>
 <div>    - <span class="yk">name:</span> <span class="yv">api-server</span></div>
 <div>      <span class="yk">dir:</span>  <span class="ys">~/projects/myproject/api</span></div>
-<div>      <span class="yk">cmd:</span>  <span class="ys">watchexec -e py -- uv run python src/main.py dev</span></div>
-<div>    - <span class="yk">name:</span> <span class="yv">web-gateway</span></div>
-<div>      <span class="yk">dir:</span>  <span class="ys">~/projects/myproject/gateway</span></div>
-<div>      <span class="yk">cmd:</span>  <span class="ys">pnpm dev</span></div>
-<div>    - <span class="yk">name:</span> <span class="yv">dashboard</span></div>
-<div>      <span class="yk">dir:</span>  <span class="ys">~/projects/myproject/dashboard</span></div>
+<div>      <span class="yk">cmd:</span>  <span class="ys">uv run python src/main.py</span></div>
+<div>      <span class="yk">env:</span></div>
+<div>        <span class="yk">DATABASE_URL:</span> <span class="ys">postgres://localhost/mydb</span></div>
+<div>    - <span class="yk">name:</span> <span class="yv">frontend</span></div>
+<div>      <span class="yk">dir:</span>  <span class="ys">~/projects/myproject/web</span></div>
 <div>      <span class="yk">cmd:</span>  <span class="ys">pnpm dev</span></div>
 <div></div>
 <div><span class="yk">editor:</span></div>
-<div>  <span class="yk">cmd:</span> <span class="yv">code</span></div>
-<div>  <span class="yk">workspace:</span> <span class="ys">~/.on/myproject.code-workspace</span></div>
+<div>  <span class="yk">cmd:</span> <span class="yv">cursor</span></div>
+<div>  <span class="yk">folders:</span></div>
+<div>    - <span class="ys">~/projects/myproject</span></div>
+<div></div>
+<div><span class="yk">hooks:</span></div>
+<div>  <span class="yk">pre_launch:</span></div>
+<div>    - <span class="ys">docker compose up -d</span></div>
+<div>  <span class="yk">pre_stop:</span></div>
+<div>    - <span class="ys">docker compose down</span></div>
       </div>
     </div>
-    <p class="example-hint" data-i18n="example_hint">Run <code>on new myproject</code> to generate, then <code>on myproject</code> to launch.</p>
+    <p class="example-hint" data-i18n="example_hint">Run <code>on init</code> to auto-detect, or <code>on new myproject</code> from scratch. Then <code>on myproject</code> to launch.</p>
   </div>
 </section>
 
@@ -778,7 +816,7 @@ footer span{margin:0 8px}
     <span>&middot;</span>
     <a href="https://github.com/rickyshin93/on" target="_blank" rel="noopener">GitHub</a>
     <span>&middot;</span>
-    <span>v0.4.0</span>
+    <span>v0.5.0</span>
   </div>
 </footer>
 
@@ -800,12 +838,18 @@ const i18n = {
     feat_port_desc: 'Auto-detect port conflicts before launch.',
     feat_git: 'Git Status',
     feat_git_desc: 'Warn about uncommitted changes before launch.',
+    feat_env: 'Env Variables',
+    feat_env_desc: 'Set per-pane env vars inline in YAML config.',
+    feat_hooks: 'Lifecycle Hooks',
+    feat_hooks_desc: 'Run commands pre/post launch and pre-stop.',
+    feat_extends: 'Config Inheritance',
+    feat_extends_desc: 'Share base config across projects with extends.',
     showcase_title: 'See What Happens',
     showcase_sub: 'One YAML config launches your entire workspace.',
     caption_terminal: 'Auto-split terminal panes with running processes',
     caption_editor: 'VS Code opens in workspace mode with all project folders',
     example_title: 'Quick Start Config',
-    example_hint: 'Run <code>on new myproject</code> to generate, then <code>on myproject</code> to launch.',
+    example_hint: 'Run <code>on init</code> to auto-detect, or <code>on new myproject</code> from scratch. Then <code>on myproject</code> to launch.',
     install_title: 'Get Started in Seconds',
     install_source: 'Or build from source:',
     copied: 'Copied!'
@@ -831,6 +875,13 @@ const i18n = {
     feat_port_desc: '\u81ea\u52a8\u68c0\u6d4b\u7aef\u53e3\u51b2\u7a81\uff0c\u542f\u52a8\u524d\u9884\u8b66\u3002',
     feat_git: 'Git \u72b6\u6001',
     feat_git_desc: '\u542f\u52a8\u524d\u63d0\u9192\u672a\u63d0\u4ea4\u7684\u66f4\u6539\u3002',
+    feat_env: '环境变量',
+    feat_env_desc: '在 YAML 配置中按 pane 设置环境变量。',
+    feat_hooks: '生命周期钩子',
+    feat_hooks_desc: '启动前/后、停止前执行自定义命令。',
+    feat_extends: '配置继承',
+    feat_extends_desc: '通过 extends 共享基础配置，减少重复。',
+    example_hint: '运行 <code>on init</code> 自动检测，或 <code>on new myproject</code> 从头创建。然后 <code>on myproject</code> 启动。',
     install_title: '\u51e0\u79d2\u949f\u5373\u53ef\u4e0a\u624b',
     install_source: '\u6216\u4ece\u6e90\u7801\u6784\u5efa\uff1a',
     copied: '\u5df2\u590d\u5236\uff01'
@@ -893,11 +944,11 @@ if (yamlCopyBtn) {
 // ---- Terminal animation ----
 const termLines = [
   { type: 'input', text: '$ on myproject' },
-  { type: 'output', text: '\u2713 Launching tmux session...', cls: 'check' },
+  { type: 'output', text: '\u2713 Running pre_launch hooks...', cls: 'check' },
+  { type: 'output', text: '\u2713 Launching terminal panes...', cls: 'check' },
   { type: 'output', text: '\u2713 Opening editor...', cls: 'check' },
   { type: 'output', text: '\u2713 Opening browser tabs...', cls: 'check' },
-  { type: 'output', text: '\u2713 Checking ports...', cls: 'check' },
-  { type: 'output', text: '\u26a1 Ready in 1.2s', cls: 'highlight' },
+  { type: 'output', text: "\u26a1 Project 'myproject' is on!", cls: 'highlight' },
 ];
 
 const termBody = document.getElementById('terminalBody');

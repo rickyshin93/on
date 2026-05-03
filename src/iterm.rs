@@ -123,7 +123,7 @@ fn append_grid_splits(s: &mut String, n: usize) {
 #[allow(clippy::format_push_string)]
 fn append_pane_config(s: &mut String, project: &str, pane: &PaneConfig, index: usize) {
     let title = format!("[{project}] {}", pane.name);
-    let cmd = pane.build_command(project);
+    let cmd = pane.build_command(project, true);
     // \e]1; sets the tab title (to project name), \e]2; sets the pane title (to pane name)
     let full_cmd = format!("printf '\\e]1;{project}\\a\\e]2;{}\\a'; {cmd}", pane.name);
     let escaped_cmd = full_cmd.replace('\\', "\\\\").replace('"', "\\\"");
@@ -183,6 +183,7 @@ mod tests {
             name: name.to_string(),
             dir: dir.to_string(),
             cmd: cmd.map(String::from),
+            env: std::collections::HashMap::new(),
         }
     }
 

@@ -8,6 +8,20 @@ use colored::Colorize;
 
 use crate::{browser, config, editor, git, iterm, port, state, tmux};
 
+fn run_hooks(hooks: &[String], phase: &str) -> Result<()> {
+    for cmd in hooks {
+        println!("  {} {cmd}", phase.dimmed());
+        let status = Command::new("sh")
+            .args(["-c", cmd])
+            .status()
+            .with_context(|| format!("Failed to run {phase} hook: {cmd}"))?;
+        if !status.success() {
+            bail!("{phase} hook failed: {cmd}");
+        }
+    }
+    Ok(())
+}
+
 /// Main launch flow for a project
 #[allow(clippy::too_many_lines)]
 pub fn run(name: &str) -> Result<()> {
@@ -101,6 +115,13 @@ pub fn run(name: &str) -> Result<()> {
         }
     }
 
+    // Pre-launch hooks
+    if let Some(ref hooks) = cfg.hooks {
+        if let Some(ref cmds) = hooks.pre_launch {
+            run_hooks(cmds, "pre_launch")?;
+        }
+    }
+
     let mut terminal_type = String::new();
 
     // Open terminal panes
@@ -136,6 +157,13 @@ pub fn run(name: &str) -> Result<()> {
 
     // Open browser
     browser::open(cfg.browser.as_ref())?;
+
+    // Post-launch hooks
+    if let Some(ref hooks) = cfg.hooks {
+        if let Some(ref cmds) = hooks.post_launch {
+            run_hooks(cmds, "post_launch")?;
+        }
+    }
 
     // For tmux, attach last (this blocks)
     if terminal_type == "tmux" {
@@ -186,6 +214,162 @@ fn poll_pid_file(path: &str) -> Option<u32> {
     None
 }
 
+/// Restart a project: stop (if running) then start
+pub fn restart(name: &str) -> Result<()> {
+    config::ensure_dirs()?;
+    config::load(name)?;
+
+    if state::is_running(name)? {
+        stop(name)?;
+    }
+    run(name)
+}
+
+/// View pane output logs
+pub fn log(name: &str, pane: Option<&str>, follow: bool) -> Result<()> {
+    let s =
+        state::load(name)?.ok_or_else(|| anyhow::anyhow!("Project '{name}' is not running."))?;
+
+    let target_panes: Vec<&state::PaneState> = match pane {
+        Some(p) => {
+            if let Some(ps) = s.panes.iter().find(|ps| ps.name == p) {
+                vec![ps]
+            } else {
+                let names: Vec<&str> = s.panes.iter().map(|ps| ps.name.as_str()).collect();
+                bail!("Pane '{p}' not found. Available: {}", names.join(", "));
+            }
+        }
+        None => s.panes.iter().collect(),
+    };
+
+    match s.terminal_type.as_str() {
+        "tmux" => {
+            for (i, ps) in s.panes.iter().enumerate() {
+                if !target_panes.iter().any(|t| t.name == ps.name) {
+                    continue;
+                }
+                if target_panes.len() > 1 {
+                    println!("{}", format!("--- {} ---", ps.name).bold());
+                }
+                match tmux::capture_pane(name, i) {
+                    Ok(output) => print!("{output}"),
+                    Err(e) => println!("  (capture failed: {e})"),
+                }
+            }
+        }
+        _ => {
+            for ps in &target_panes {
+                let log_file = config::log_path(name, &ps.name);
+                if target_panes.len() > 1 {
+                    println!("{}", format!("--- {} ---", ps.name).bold());
+                }
+                if log_file.exists() {
+                    if follow {
+                        Command::new("tail")
+                            .args(["-f", log_file.to_str().unwrap()])
+                            .status()
+                            .context("Failed to tail log file")?;
+                    } else {
+                        let content = std::fs::read_to_string(&log_file)
+                            .with_context(|| format!("Failed to read {}", log_file.display()))?;
+                        print!("{content}");
+                    }
+                } else {
+                    println!("  (no log file yet)");
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Show detailed status of a project
+pub fn status(name: &str) -> Result<()> {
+    config::ensure_dirs()?;
+    let cfg = config::load(name)?;
+
+    match state::load(name)? {
+        None => {
+            println!("Project '{name}' is not running.");
+        }
+        Some(s) => {
+            println!("Project: {}", name.bold());
+            println!(
+                "Started: {} ({})",
+                s.started_at,
+                format_duration(&s.started_at)
+            );
+            println!();
+
+            println!("Panes:");
+            for pane in &s.panes {
+                let alive = state::is_pid_alive(pane.pid);
+                if alive {
+                    println!(
+                        "  {} {:<12} PID {:<8} {}",
+                        "●".green(),
+                        pane.name,
+                        pane.pid,
+                        "alive".green()
+                    );
+                } else {
+                    println!(
+                        "  {} {:<12} PID {:<8} {}",
+                        "✗".red(),
+                        pane.name,
+                        pane.pid,
+                        "dead".red()
+                    );
+                }
+            }
+
+            let urls: Vec<String> = cfg.browser.unwrap_or_default();
+            let cmds: Vec<String> = cfg
+                .terminal
+                .as_ref()
+                .map(|t| t.panes.iter().filter_map(|p| p.cmd.clone()).collect())
+                .unwrap_or_default();
+            let ports = port::extract_ports(&urls, &cmds);
+            if !ports.is_empty() {
+                println!();
+                println!("Ports:");
+                for p in &ports {
+                    if let Some(c) = port::check_port(*p) {
+                        println!("  {}  {} (PID {})", p, "listening".green(), c.pid);
+                    } else {
+                        println!("  {}  {}", p, "free".dimmed());
+                    }
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+fn format_duration(started_at: &str) -> String {
+    let started = chrono::NaiveDateTime::parse_from_str(started_at, "%Y-%m-%dT%H:%M:%S");
+    match started {
+        Ok(start) => {
+            let now = chrono::Local::now().naive_local();
+            let dur = now.signed_duration_since(start);
+            let total_secs = dur.num_seconds();
+            if total_secs < 0 {
+                return "just now".to_string();
+            }
+            let hours = total_secs / 3600;
+            let mins = (total_secs % 3600) / 60;
+            if hours > 0 {
+                format!("{hours}h {mins}m ago")
+            } else if mins > 0 {
+                format!("{mins}m ago")
+            } else {
+                "just now".to_string()
+            }
+        }
+        Err(_) => "unknown".to_string(),
+    }
+}
+
 /// Stop a project: kill processes, close terminal, remove state
 pub fn stop(name: &str) -> Result<()> {
     match state::load(name)? {
@@ -194,6 +378,13 @@ pub fn stop(name: &str) -> Result<()> {
             return Ok(());
         }
         Some(s) => {
+            if let Ok(cfg) = config::load(name) {
+                if let Some(ref hooks) = cfg.hooks {
+                    if let Some(ref cmds) = hooks.pre_stop {
+                        run_hooks(cmds, "pre_stop")?;
+                    }
+                }
+            }
             kill_all_process_groups(&s.panes);
             match s.terminal_type.as_str() {
                 "tmux" => tmux::close_session(name),
@@ -336,6 +527,102 @@ pub fn new_project(name: &str) -> Result<()> {
         .arg(path.to_str().unwrap())
         .status()
         .with_context(|| format!("Failed to open editor '{editor_cmd}'"))?;
+    Ok(())
+}
+
+/// Clone an existing project config to a new name
+pub fn clone_project(source: &str, target: &str) -> Result<()> {
+    config::ensure_dirs()?;
+    let src_path = config::config_path(source);
+    if !src_path.exists() {
+        bail!(
+            "Source config not found: {}\nRun `on list` to see available projects.",
+            src_path.display(),
+        );
+    }
+    let tgt_path = config::config_path(target);
+    if tgt_path.exists() {
+        bail!("Target config already exists: {}", tgt_path.display());
+    }
+
+    let content = std::fs::read_to_string(&src_path)
+        .with_context(|| format!("Failed to read {}", src_path.display()))?;
+    let content = content.replacen(&format!("name: {source}"), &format!("name: {target}"), 1);
+    std::fs::write(&tgt_path, &content)
+        .with_context(|| format!("Failed to write {}", tgt_path.display()))?;
+
+    println!(
+        "{}",
+        format!("Cloned '{source}' → '{target}': {}", tgt_path.display()).green()
+    );
+
+    let editor_cmd = std::env::var("EDITOR").unwrap_or_else(|_| "vim".to_string());
+    Command::new(&editor_cmd)
+        .arg(tgt_path.to_str().unwrap())
+        .status()
+        .with_context(|| format!("Failed to open editor '{editor_cmd}'"))?;
+    Ok(())
+}
+
+/// Auto-detect project structure and create config interactively
+pub fn init() -> Result<()> {
+    config::ensure_dirs()?;
+
+    let cwd = std::env::current_dir().context("Failed to get current directory")?;
+    let detected = config::detect_project(&cwd);
+
+    println!("{}", "Detected project structure:".green());
+    for pane in &detected.panes {
+        if let Some(ref cmd) = pane.cmd {
+            println!("  {} {} ({})", "●".green(), pane.name, cmd);
+        } else {
+            println!("  {} {} (shell)", "●".green(), pane.name);
+        }
+    }
+    println!();
+
+    // Confirm project name
+    print!("Project name [{}]: ", detected.name);
+    io::stdout().flush().unwrap();
+    let mut name_input = String::new();
+    io::stdin().read_line(&mut name_input).unwrap();
+    let name = name_input.trim();
+    let name = if name.is_empty() {
+        &detected.name
+    } else {
+        name
+    };
+
+    let path = config::config_path(name);
+    if path.exists() {
+        bail!(
+            "Config already exists: {}\nRun `on edit {name}` to modify it.",
+            path.display(),
+        );
+    }
+
+    // Confirm editor
+    print!("Editor [code]: ");
+    io::stdout().flush().unwrap();
+    let mut editor_input = String::new();
+    io::stdin().read_line(&mut editor_input).unwrap();
+    let editor_cmd = editor_input.trim();
+    let editor_cmd = if editor_cmd.is_empty() {
+        "code"
+    } else {
+        editor_cmd
+    };
+
+    let yaml = config::create_config_from_detection(name, &detected, editor_cmd);
+    std::fs::write(&path, &yaml).with_context(|| format!("Failed to write {}", path.display()))?;
+
+    println!("{}", format!("Created config: {}", path.display()).green());
+
+    let editor = std::env::var("EDITOR").unwrap_or_else(|_| "vim".to_string());
+    Command::new(&editor)
+        .arg(path.to_str().unwrap())
+        .status()
+        .with_context(|| format!("Failed to open editor '{editor}'"))?;
     Ok(())
 }
 

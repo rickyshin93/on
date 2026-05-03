@@ -25,6 +25,26 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
+    /// View pane output logs
+    Log {
+        /// Project name
+        project: String,
+        /// Pane name (optional, shows all if omitted)
+        pane: Option<String>,
+        /// Follow log output in real-time (iTerm only)
+        #[arg(short, long)]
+        follow: bool,
+    },
+    /// Show detailed project status
+    Status {
+        /// Project name
+        project: String,
+    },
+    /// Restart project (stop + start)
+    Restart {
+        /// Project name to restart
+        project: String,
+    },
     /// Stop project services
     Stop {
         /// Project name to stop
@@ -45,6 +65,15 @@ enum Commands {
         /// Project name
         project: String,
     },
+    /// Clone an existing project config
+    Clone {
+        /// Source project name
+        source: String,
+        /// New project name
+        target: String,
+    },
+    /// Auto-detect project and create config from current directory
+    Init,
     /// Check environment for common issues
     Doctor,
     /// Generate shell completions
@@ -58,6 +87,13 @@ fn main() {
     let cli = Cli::parse();
 
     let result = match cli.command {
+        Some(Commands::Log {
+            project,
+            pane,
+            follow,
+        }) => process::log(&project, pane.as_deref(), follow),
+        Some(Commands::Status { project }) => process::status(&project),
+        Some(Commands::Restart { project }) => process::restart(&project),
         Some(Commands::Stop { project, all }) => {
             if all {
                 process::stop_all()
@@ -67,6 +103,8 @@ fn main() {
                 Err(anyhow!("Usage: on stop <project> or on stop --all"))
             }
         }
+        Some(Commands::Clone { source, target }) => process::clone_project(&source, &target),
+        Some(Commands::Init) => process::init(),
         Some(Commands::List) => process::list(),
         Some(Commands::Edit { project }) => process::edit(&project),
         Some(Commands::New { project }) => process::new_project(&project),

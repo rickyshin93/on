@@ -66,7 +66,7 @@ pub fn open_panes(
         // Send commands to each pane
         for (i, pane) in chunk.iter().enumerate() {
             let target = format!("{session}:{win_idx}.{i}");
-            let cmd = pane.build_command(project);
+            let cmd = pane.build_command(project, false);
             let _ = Command::new("tmux")
                 .args(["send-keys", "-t", &target, &cmd, "Enter"])
                 .status();
@@ -103,6 +103,24 @@ pub fn close_session(project: &str) {
     let _ = Command::new("tmux")
         .args(["kill-session", "-t", &session])
         .output();
+}
+
+/// Capture the scrollback buffer of a tmux pane by index
+pub fn capture_pane(project: &str, pane_index: usize) -> Result<String> {
+    let session = session_name(project);
+    let target = format!("{session}:0.{pane_index}");
+    let output = Command::new("tmux")
+        .args(["capture-pane", "-t", &target, "-p", "-S", "-"])
+        .output()
+        .context("Failed to run tmux capture-pane")?;
+    if output.status.success() {
+        Ok(String::from_utf8_lossy(&output.stdout).to_string())
+    } else {
+        bail!(
+            "tmux capture-pane failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
 }
 
 fn session_name(project: &str) -> String {

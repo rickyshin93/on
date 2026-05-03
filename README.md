@@ -22,7 +22,10 @@ cargo install --path .
 ## Quick Start
 
 ```bash
-# Create a project config
+# Auto-detect project and create config
+on init
+
+# Or create a blank template
 on new myproject
 
 # Edit the config
@@ -30,6 +33,20 @@ on edit myproject
 
 # Launch the project
 on myproject
+
+# Restart a running project
+on restart myproject
+
+# Check detailed project status
+on status myproject
+
+# View pane logs
+on log myproject           # all panes
+on log myproject server    # specific pane
+on log myproject -f        # follow mode (iTerm)
+
+# Clone a project config
+on clone myproject newproject
 
 # See all projects
 on list
@@ -61,6 +78,9 @@ terminal:
     - name: backend
       dir: ~/projects/myproject/backend
       cmd: watchexec -e py python main.py
+      env:                     # optional environment variables
+        RUST_LOG: debug
+        DATABASE_URL: postgres://localhost/mydb
     - name: git
       dir: ~/projects/myproject
 editor:
@@ -72,6 +92,22 @@ editor:
 browser:
   - http://localhost:3000
   - https://github.com/me/myproject
+
+# Optional: inherit from a base config
+# extends: base
+
+# Optional: lifecycle hooks
+# hooks:
+#   pre_launch:
+#     - docker compose up -d
+#   post_launch:
+#     - echo "ready!"
+#   pre_stop:
+#     - docker compose down
+
+# Optional: checks
+# checks:
+#   dirty_git: true
 ```
 
 ## Features
@@ -81,9 +117,16 @@ browser:
 - **Multi-Tab** — Automatically splits panes across tabs when exceeding `max_panes_per_tab` (default 4)
 - **Editor** — Opens configured editor with folders or workspace file
 - **Browser** — Opens URLs in default browser
+- **Environment Variables** — Set per-pane env vars via `env:` in config
 - **Port Conflict Detection** — Auto-detects ports from URLs/commands, warns on conflicts
 - **Git Status** — Warns about uncommitted changes before launch
-- **Process Tracking** — Tracks PIDs for clean `on stop`
+- **Hooks** — Run commands before/after launch and before stop (`pre_launch`, `post_launch`, `pre_stop`)
+- **Config Inheritance** — Share common settings via `extends: base` across projects
+- **Process Tracking** — Tracks PIDs for clean `on stop` / `on restart`
+- **Project Status** — `on status` shows pane health, ports, and uptime
+- **Pane Logs** — `on log` captures pane output (tmux: capture-pane, iTerm: tee to file)
+- **Clone Config** — `on clone` copies a project config for quick setup
+- **Auto-Init** — `on init` scans your project and generates config automatically
 - **Fuzzy Select** — Run `on` with no args to pick a project
 
 ## Requirements
