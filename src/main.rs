@@ -5,6 +5,7 @@ mod git;
 mod iterm;
 mod port;
 mod process;
+mod selection;
 mod state;
 mod tmux;
 
@@ -13,11 +14,29 @@ use clap::{CommandFactory, Parser, Subcommand};
 use clap_complete::{generate, Shell};
 use dialoguer::FuzzySelect;
 
+use crate::selection::{Component, LaunchSelection};
+
 #[derive(Parser)]
 #[command(name = "on", version, about = "One-command dev environment launcher")]
 struct Cli {
     /// Project name to launch
     project: Option<String>,
+
+    /// Launch only the selected components (repeatable). Default: all.
+    #[arg(long = "only", value_name = "COMPONENT", value_enum)]
+    only: Vec<Component>,
+
+    /// Launch only the editor (combinable with -t / -b)
+    #[arg(short = 'e', long = "editor")]
+    editor: bool,
+
+    /// Launch only the terminal panes (combinable with -e / -b)
+    #[arg(short = 't', long = "terminal")]
+    terminal: bool,
+
+    /// Launch only the browser (combinable with -e / -t)
+    #[arg(short = 'b', long = "browser")]
+    browser: bool,
 
     #[command(subcommand)]
     command: Option<Commands>,
@@ -114,10 +133,12 @@ fn main() {
             Ok(())
         }
         None => {
+            let selection =
+                LaunchSelection::from_flags(&cli.only, cli.editor, cli.terminal, cli.browser);
             if let Some(name) = cli.project {
-                process::run(&name)
+                process::run(&name, selection)
             } else {
-                fuzzy_select()
+                fuzzy_select(selection)
             }
         }
     };
@@ -128,21 +149,21 @@ fn main() {
     }
 }
 
-fn fuzzy_select() -> Result<()> {
+fn fuzzy_select(selection: LaunchSelection) -> Result<()> {
     config::ensure_dirs()?;
     let projects = config::list_projects();
     if projects.is_empty() {
         bail!("No projects configured. Run `on new <name>` to create one.");
     }
 
-    let selection = FuzzySelect::new()
+    let picked = FuzzySelect::new()
         .with_prompt("Select project")
         .items(&projects)
         .interact_opt()
         .map_err(|e| anyhow::anyhow!("Selection error: {e}"))?;
 
-    if let Some(idx) = selection {
-        process::run(&projects[idx])
+    if let Some(idx) = picked {
+        process::run(&projects[idx], selection)
     } else {
         println!("Cancelled.");
         Ok(())

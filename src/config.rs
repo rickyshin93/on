@@ -483,7 +483,7 @@ mod tests {
 
     #[test]
     fn parse_new_terminal_format() {
-        let yaml = r#"
+        let yaml = r"
 name: myproject
 terminal:
   type: tmux
@@ -505,7 +505,7 @@ editor:
 browser:
   - http://localhost:3000
   - https://github.com/me/myproject
-"#;
+";
         let raw: RawConfig = serde_yaml::from_str(yaml).unwrap();
         let config = resolve_config(raw);
         assert_eq!(config.name, "myproject");
@@ -526,7 +526,7 @@ browser:
 
     #[test]
     fn parse_legacy_iterm_format() {
-        let yaml = r#"
+        let yaml = r"
 name: myproject
 iterm:
   layout: grid
@@ -534,7 +534,7 @@ iterm:
     - name: frontend
       dir: ~/projects/myproject/frontend
       cmd: npm run dev
-"#;
+";
         let raw: RawConfig = serde_yaml::from_str(yaml).unwrap();
         let config = resolve_config(raw);
 
@@ -546,7 +546,7 @@ iterm:
 
     #[test]
     fn terminal_takes_priority_over_iterm() {
-        let yaml = r#"
+        let yaml = r"
 name: myproject
 terminal:
   type: tmux
@@ -557,7 +557,7 @@ iterm:
   panes:
     - name: old
       dir: /tmp
-"#;
+";
         let raw: RawConfig = serde_yaml::from_str(yaml).unwrap();
         let config = resolve_config(raw);
 
@@ -696,7 +696,7 @@ iterm:
 
     #[test]
     fn parse_yaml_with_env() {
-        let yaml = r#"
+        let yaml = r"
 name: envtest
 terminal:
   type: tmux
@@ -709,7 +709,7 @@ terminal:
         DATABASE_URL: postgres://localhost/mydb
     - name: shell
       dir: ~/projects/app
-"#;
+";
         let raw: RawConfig = serde_yaml::from_str(yaml).unwrap();
         let config = resolve_config(raw);
         let terminal = config.terminal.unwrap();

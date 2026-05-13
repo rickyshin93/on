@@ -31,8 +31,16 @@ on new myproject
 # Edit the config
 on edit myproject
 
-# Launch the project
+# Launch the project (terminal panes + editor + browser)
 on myproject
+
+# Launch only selected components
+on myproject -e               # only editor
+on myproject -t               # only terminal panes
+on myproject -b               # only browser
+on myproject -e -t            # editor + terminal (skip browser)
+on myproject --only editor    # long form, repeatable
+on myproject --only editor --only browser
 
 # Restart a running project
 on restart myproject
@@ -128,6 +136,7 @@ browser:
 - **Clone Config** — `on clone` copies a project config for quick setup
 - **Auto-Init** — `on init` scans your project and generates config automatically
 - **Fuzzy Select** — Run `on` with no args to pick a project
+- **Selective Launch** — `-e` / `-t` / `-b` (or `--only editor|terminal|browser`) launch a subset of components
 
 ## Requirements
 

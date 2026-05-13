@@ -6,6 +6,7 @@ use std::time::Duration;
 
 use colored::Colorize;
 
+use crate::selection::LaunchSelection;
 use crate::{browser, config, editor, git, iterm, port, state, tmux};
 
 fn run_hooks(hooks: &[String], phase: &str) -> Result<()> {
@@ -24,12 +25,12 @@ fn run_hooks(hooks: &[String], phase: &str) -> Result<()> {
 
 /// Main launch flow for a project
 #[allow(clippy::too_many_lines)]
-pub fn run(name: &str) -> Result<()> {
+pub fn run(name: &str, selection: LaunchSelection) -> Result<()> {
     config::ensure_dirs()?;
     let cfg = config::load(name)?;
 
-    // Check if already running
-    if state::is_running(name)? {
+    // Check if already running (only when launching terminal panes)
+    if selection.terminal && state::is_running(name)? {
         println!(
             "{}",
             format!("Project '{name}' is already running.").yellow()
@@ -46,13 +47,13 @@ pub fn run(name: &str) -> Result<()> {
         stop(name)?;
     }
 
-    // Git status check (only when checks.dirty_git: true in config)
+    // Git status check (only when checks.dirty_git: true and terminal is selected)
     let dirty_git_enabled = cfg
         .checks
         .as_ref()
         .and_then(|c| c.dirty_git)
         .unwrap_or(false);
-    if dirty_git_enabled {
+    if selection.terminal && dirty_git_enabled {
         if let Some(ref term_cfg) = cfg.terminal {
             let dirs: Vec<String> = term_cfg.panes.iter().map(|p| p.dir.clone()).collect();
             let dirty = git::check_status(&dirs);
@@ -76,13 +77,20 @@ pub fn run(name: &str) -> Result<()> {
         }
     }
 
-    // Port conflict check
-    let urls: Vec<String> = cfg.browser.clone().unwrap_or_default();
-    let cmds: Vec<String> = cfg
-        .terminal
-        .as_ref()
-        .map(|t| t.panes.iter().filter_map(|p| p.cmd.clone()).collect())
-        .unwrap_or_default();
+    // Port conflict check — only for selected components
+    let urls: Vec<String> = if selection.browser {
+        cfg.browser.clone().unwrap_or_default()
+    } else {
+        Vec::new()
+    };
+    let cmds: Vec<String> = if selection.terminal {
+        cfg.terminal
+            .as_ref()
+            .map(|t| t.panes.iter().filter_map(|p| p.cmd.clone()).collect())
+            .unwrap_or_default()
+    } else {
+        Vec::new()
+    };
     let ports = port::extract_ports(&urls, &cmds);
 
     for p in &ports {
@@ -125,38 +133,44 @@ pub fn run(name: &str) -> Result<()> {
     let mut terminal_type = String::new();
 
     // Open terminal panes
-    if let Some(ref term_cfg) = cfg.terminal {
-        let layout = term_cfg.layout.as_deref().unwrap_or("vertical");
-        terminal_type.clone_from(&term_cfg.terminal_type);
+    if selection.terminal {
+        if let Some(ref term_cfg) = cfg.terminal {
+            let layout = term_cfg.layout.as_deref().unwrap_or("vertical");
+            terminal_type.clone_from(&term_cfg.terminal_type);
 
-        let max_per_tab = Some(term_cfg.max_panes_per_tab.unwrap_or(4));
-        match term_cfg.terminal_type.as_str() {
-            "tmux" => {
-                tmux::open_panes(name, &term_cfg.panes, layout, max_per_tab)?;
+            let max_per_tab = Some(term_cfg.max_panes_per_tab.unwrap_or(4));
+            match term_cfg.terminal_type.as_str() {
+                "tmux" => {
+                    tmux::open_panes(name, &term_cfg.panes, layout, max_per_tab)?;
+                }
+                _ => {
+                    iterm::open_panes(name, &term_cfg.panes, layout, max_per_tab)?;
+                }
             }
-            _ => {
-                iterm::open_panes(name, &term_cfg.panes, layout, max_per_tab)?;
-            }
-        }
 
-        // Collect PIDs from pid files
-        let pane_states = collect_pids(name, &term_cfg.panes);
-        if !pane_states.is_empty() {
-            let project_state = state::ProjectState {
-                project: name.to_string(),
-                started_at: chrono::Local::now().format("%Y-%m-%dT%H:%M:%S").to_string(),
-                terminal_type: terminal_type.clone(),
-                panes: pane_states,
-            };
-            state::save(&project_state)?;
+            // Collect PIDs from pid files
+            let pane_states = collect_pids(name, &term_cfg.panes);
+            if !pane_states.is_empty() {
+                let project_state = state::ProjectState {
+                    project: name.to_string(),
+                    started_at: chrono::Local::now().format("%Y-%m-%dT%H:%M:%S").to_string(),
+                    terminal_type: terminal_type.clone(),
+                    panes: pane_states,
+                };
+                state::save(&project_state)?;
+            }
         }
     }
 
     // Open editor
-    editor::open(cfg.editor.as_ref(), name)?;
+    if selection.editor {
+        editor::open(cfg.editor.as_ref(), name)?;
+    }
 
     // Open browser
-    browser::open(cfg.browser.as_ref())?;
+    if selection.browser {
+        browser::open(cfg.browser.as_ref())?;
+    }
 
     // Post-launch hooks
     if let Some(ref hooks) = cfg.hooks {
@@ -222,7 +236,7 @@ pub fn restart(name: &str) -> Result<()> {
     if state::is_running(name)? {
         stop(name)?;
     }
-    run(name)
+    run(name, LaunchSelection::all())
 }
 
 /// View pane output logs

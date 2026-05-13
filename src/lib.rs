@@ -5,5 +5,6 @@ pub mod git;
 pub mod iterm;
 pub mod port;
 pub mod process;
+pub mod selection;
 pub mod state;
 pub mod tmux;

@@ -341,6 +341,10 @@ section{padding:100px 0}
 .feature-icon svg{width:100%;height:100%}
 .feature-title{font-size:17px;font-weight:600;margin-bottom:8px}
 .feature-desc{font-size:14px;color:var(--text2);line-height:1.6}
+.feature-desc code{
+  font-family:var(--mono);font-size:12.5px;color:var(--cyan);
+  background:rgba(34,211,238,.08);padding:1px 6px;border-radius:4px;
+}
 
 /* ---- Install ---- */
 .install{text-align:center;padding-bottom:80px}
@@ -746,6 +750,16 @@ footer span{margin:0 8px}
         <p class="feature-desc" data-i18n="feat_extends_desc">Share base config across projects with extends.</p>
       </div>
 
+      <div class="feature-card">
+        <div class="feature-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>
+          </svg>
+        </div>
+        <h3 class="feature-title" data-i18n="feat_selective">Selective Launch</h3>
+        <p class="feature-desc" data-i18n="feat_selective_desc"><code>-e</code> / <code>-t</code> / <code>-b</code> launch only editor, terminal, or browser.</p>
+      </div>
+
     </div>
   </div>
 </section>
@@ -837,7 +851,7 @@ footer span{margin:0 8px}
     <span>&middot;</span>
     <a href="https://github.com/rickyshin93/on" target="_blank" rel="noopener">GitHub</a>
     <span>&middot;</span>
-    <span>v0.5.0</span>
+    <span>v0.6.0</span>
   </div>
 </footer>
 
@@ -865,12 +879,14 @@ const i18n = {
     feat_hooks_desc: 'Run commands pre/post launch and pre-stop.',
     feat_extends: 'Config Inheritance',
     feat_extends_desc: 'Share base config across projects with extends.',
+    feat_selective: 'Selective Launch',
+    feat_selective_desc: '<code>-e</code> / <code>-t</code> / <code>-b</code> launch only editor, terminal, or browser.',
     showcase_title: 'See What Happens',
     showcase_sub: 'One YAML config launches your entire workspace.',
     caption_terminal: 'Auto-split terminal panes with running processes',
     caption_editor: 'VS Code opens in workspace mode with all project folders',
     example_title: 'Quick Start Config',
-    example_hint: 'Run <code>on init</code> to auto-detect, or <code>on new myproject</code> from scratch. Then <code>on myproject</code> to launch.',
+    example_hint: 'Run <code>on init</code> to auto-detect, or <code>on new myproject</code> from scratch. Then <code>on myproject</code> to launch — add <code>-e</code> / <code>-t</code> / <code>-b</code> to launch only the editor, terminal, or browser.',
     install_title: 'Get Started in Seconds',
     install_source: 'Or build from source:',
     install_agent_hint: 'Your agent learns to install, configure, and use on autonomously',
@@ -903,7 +919,9 @@ const i18n = {
     feat_hooks_desc: '启动前/后、停止前执行自定义命令。',
     feat_extends: '配置继承',
     feat_extends_desc: '通过 extends 共享基础配置，减少重复。',
-    example_hint: '运行 <code>on init</code> 自动检测，或 <code>on new myproject</code> 从头创建。然后 <code>on myproject</code> 启动。',
+    feat_selective: '按需启动',
+    feat_selective_desc: '<code>-e</code> / <code>-t</code> / <code>-b</code> 只启动编辑器、终端或浏览器。',
+    example_hint: '运行 <code>on init</code> 自动检测，或 <code>on new myproject</code> 从头创建。然后 <code>on myproject</code> 启动；用 <code>-e</code> / <code>-t</code> / <code>-b</code> 按需启动。',
     install_title: '\u51e0\u79d2\u949f\u5373\u53ef\u4e0a\u624b',
     install_source: '\u6216\u4ece\u6e90\u7801\u6784\u5efa\uff1a',
     install_agent_hint: '你的 AI agent 将自主学会安装、配置和使用 on',

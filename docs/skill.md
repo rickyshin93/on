@@ -18,7 +18,9 @@ Or from source: `cargo install --path .` (requires Rust toolchain).
 
 | Command | Description |
 |---------|-------------|
-| `on <project>` | Launch a project |
+| `on <project>` | Launch a project (terminal panes + editor + browser) |
+| `on <project> -e` / `-t` / `-b` | Launch only editor / terminal / browser (combinable: `-et`) |
+| `on <project> --only editor [--only terminal]` | Long form, repeatable |
 | `on` | Fuzzy-select from configured projects |
 | `on init` | Auto-detect project structure and create config |
 | `on new <project>` | Create a blank config from template |
@@ -87,6 +89,7 @@ hooks:
 - **Logs**: tmux uses `tmux capture-pane`; iTerm tees output to `~/.on/logs/`.
 - **Port detection** extracts ports from browser URLs and pane commands, warns on conflicts before launch.
 - **Process tracking** records PIDs in `~/.on/state/<project>.json` for clean stop/restart.
+- **Selective launch** (`-e` / `-t` / `-b` or `--only editor|terminal|browser`) skips unselected components and their related checks (e.g. `-e` skips port and git checks). Without flags, all three components launch.
 
 ## When helping users
 
@@ -95,3 +98,4 @@ hooks:
 3. Use `extends: base` to share editor/browser/hooks across projects.
 4. Use `env:` for secrets or per-environment config instead of .env files.
 5. Use `hooks.pre_launch` for infrastructure (docker, databases) that must start first.
+6. Suggest `on <project> -e` (or `-t` / `-b`) when the user only wants to reopen the editor / restart panes / open browser tabs without touching the rest.
