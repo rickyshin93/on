@@ -95,6 +95,11 @@ enum Commands {
     Init,
     /// Check environment for common issues
     Doctor,
+    /// Validate one or all project configs without launching anything
+    Validate {
+        /// Project name (omit to validate all configs)
+        project: Option<String>,
+    },
     /// Generate shell completions
     Completions {
         /// Shell type
@@ -128,6 +133,7 @@ fn main() {
         Some(Commands::Edit { project }) => process::edit(&project),
         Some(Commands::New { project }) => process::new_project(&project),
         Some(Commands::Doctor) => process::doctor(),
+        Some(Commands::Validate { project }) => process::validate(project.as_deref()),
         Some(Commands::Completions { shell }) => {
             generate(shell, &mut Cli::command(), "on", &mut std::io::stdout());
             Ok(())

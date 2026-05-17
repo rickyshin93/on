@@ -44,7 +44,7 @@ pub fn open(editor: Option<&EditorConfig>, project: &str) -> Result<()> {
     }
 
     Command::new(cmd)
-        .arg(ws_path.to_str().unwrap())
+        .arg(&ws_path)
         .spawn()
         .with_context(|| format!("Failed to launch editor '{cmd}'"))?;
 
@@ -53,6 +53,7 @@ pub fn open(editor: Option<&EditorConfig>, project: &str) -> Result<()> {
 
 #[cfg(test)]
 mod tests {
+    #![allow(clippy::unwrap_used, clippy::expect_used)]
     use super::*;
 
     #[test]

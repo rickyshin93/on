@@ -44,98 +44,72 @@ fn get_dirty_count(dir: &str) -> Option<usize> {
 
 #[cfg(test)]
 mod tests {
+    #![allow(clippy::unwrap_used, clippy::expect_used)]
     use super::*;
     use std::fs;
 
+    fn git(args: &[&str], cwd: &std::path::Path) {
+        Command::new("git")
+            .args(args)
+            .current_dir(cwd)
+            .output()
+            .expect("git failed");
+    }
+
     #[test]
     fn clean_repo_returns_empty() {
-        // Use a temp dir that is a git repo with no changes
-        let tmp = std::env::temp_dir().join("_launch_test_git_clean");
-        let _ = fs::remove_dir_all(&tmp);
-        fs::create_dir_all(&tmp).unwrap();
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path();
+        git(&["init"], dir);
+        fs::write(dir.join("hello.txt"), "hello").unwrap();
+        git(&["add", "."], dir);
+        git(
+            &[
+                "-c",
+                "user.email=t@t",
+                "-c",
+                "user.name=t",
+                "commit",
+                "-m",
+                "init",
+            ],
+            dir,
+        );
 
-        Command::new("git")
-            .args(["init"])
-            .current_dir(&tmp)
-            .output()
-            .unwrap();
-
-        // Create and commit a file so the repo is clean
-        fs::write(tmp.join("hello.txt"), "hello").unwrap();
-        Command::new("git")
-            .args(["add", "."])
-            .current_dir(&tmp)
-            .output()
-            .unwrap();
-        Command::new("git")
-            .args(["commit", "-m", "init"])
-            .current_dir(&tmp)
-            .output()
-            .unwrap();
-
-        let dirs = vec![tmp.to_string_lossy().to_string()];
-        let dirty = check_status(&dirs);
-        assert!(dirty.is_empty());
-
-        let _ = fs::remove_dir_all(&tmp);
+        let dirs = vec![dir.to_string_lossy().to_string()];
+        assert!(check_status(&dirs).is_empty());
     }
 
     #[test]
     fn dirty_repo_returns_count() {
-        let tmp = std::env::temp_dir().join("_launch_test_git_dirty");
-        let _ = fs::remove_dir_all(&tmp);
-        fs::create_dir_all(&tmp).unwrap();
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path();
+        git(&["init"], dir);
+        fs::write(dir.join("a.txt"), "a").unwrap();
+        fs::write(dir.join("b.txt"), "b").unwrap();
 
-        Command::new("git")
-            .args(["init"])
-            .current_dir(&tmp)
-            .output()
-            .unwrap();
-
-        // Create uncommitted files
-        fs::write(tmp.join("a.txt"), "a").unwrap();
-        fs::write(tmp.join("b.txt"), "b").unwrap();
-
-        let dirs = vec![tmp.to_string_lossy().to_string()];
+        let dirs = vec![dir.to_string_lossy().to_string()];
         let dirty = check_status(&dirs);
         assert_eq!(dirty.len(), 1);
         assert_eq!(dirty[0].file_count, 2);
-
-        let _ = fs::remove_dir_all(&tmp);
     }
 
     #[test]
     fn non_git_dir_ignored() {
-        let tmp = std::env::temp_dir().join("_launch_test_git_nongit");
-        let _ = fs::remove_dir_all(&tmp);
-        fs::create_dir_all(&tmp).unwrap();
-
-        let dirs = vec![tmp.to_string_lossy().to_string()];
-        let dirty = check_status(&dirs);
-        assert!(dirty.is_empty());
-
-        let _ = fs::remove_dir_all(&tmp);
+        let tmp = tempfile::tempdir().unwrap();
+        let dirs = vec![tmp.path().to_string_lossy().to_string()];
+        assert!(check_status(&dirs).is_empty());
     }
 
     #[test]
     fn deduplicates_dirs() {
-        let tmp = std::env::temp_dir().join("_launch_test_git_dedup");
-        let _ = fs::remove_dir_all(&tmp);
-        fs::create_dir_all(&tmp).unwrap();
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path();
+        git(&["init"], dir);
+        fs::write(dir.join("a.txt"), "a").unwrap();
 
-        Command::new("git")
-            .args(["init"])
-            .current_dir(&tmp)
-            .output()
-            .unwrap();
-        fs::write(tmp.join("a.txt"), "a").unwrap();
-
-        let dir = tmp.to_string_lossy().to_string();
-        let dirs = vec![dir.clone(), dir.clone(), dir];
-        let dirty = check_status(&dirs);
-        // Should only check once, not 3 times
+        let s = dir.to_string_lossy().to_string();
+        let dirty = check_status(&[s.clone(), s.clone(), s]);
         assert_eq!(dirty.len(), 1);
-
-        let _ = fs::remove_dir_all(&tmp);
     }
 }

@@ -176,6 +176,7 @@ fn run_applescript(script: &str) -> Result<()> {
 
 #[cfg(test)]
 mod tests {
+    #![allow(clippy::unwrap_used, clippy::expect_used)]
     use super::*;
 
     fn test_pane(name: &str, dir: &str, cmd: Option<&str>) -> PaneConfig {

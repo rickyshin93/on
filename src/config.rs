@@ -76,7 +76,7 @@ impl PaneConfig {
     /// Build the shell command string for a pane.
     /// When `logging` is true, output is tee'd to a log file (used by iTerm backend).
     pub fn build_command(&self, project: &str, logging: bool) -> String {
-        let mut parts = vec![format!("cd {}", self.dir)];
+        let mut parts = vec![format!("cd {}", shell_escape(&self.dir))];
 
         let mut keys: Vec<&String> = self.env.keys().collect();
         keys.sort();
@@ -86,7 +86,8 @@ impl PaneConfig {
         }
 
         if let Some(cmd) = &self.cmd {
-            let pid_file = format!("/tmp/.on_{project}_{}.pid", self.name);
+            let pid_file = pid_file_path(project, &self.name);
+            let pid_file = pid_file.display();
             if logging {
                 let log_file = log_path(project, &self.name);
                 let log_file = log_file.display();
@@ -117,10 +118,16 @@ fn default_terminal_type() -> String {
     }
 }
 
-/// Returns the base directory: ~/.on/
+/// Pure helper: pick a home directory, falling back to `.` when none.
+fn home_or_fallback(home: Option<PathBuf>) -> PathBuf {
+    home.unwrap_or_else(|| PathBuf::from("."))
+}
+
+/// Returns the base directory: ~/.on/. Falls back to ./.on when no home
+/// directory is available (some sandboxes / containers strip `HOME`).
+/// Never panics.
 pub fn base_dir() -> PathBuf {
-    let home = dirs::home_dir().expect("Cannot determine home directory");
-    home.join(".on")
+    home_or_fallback(dirs::home_dir()).join(".on")
 }
 
 /// Returns the config file path for a project: ~/.on/<name>.yaml
@@ -138,11 +145,25 @@ pub fn log_path(project: &str, pane: &str) -> PathBuf {
     logs_dir().join(format!("{project}_{pane}.log"))
 }
 
-/// Ensure ~/.on/, ~/.on/state/, and ~/.on/logs/ directories exist
+/// Returns the PID file path for a project pane.
+///
+/// Lives under `~/.on/state/pids/` rather than `/tmp` to avoid the
+/// symlink-attack surface of a world-writable directory and to prevent
+/// cross-user collisions on shared hosts.
+pub fn pid_file_path(project: &str, pane: &str) -> PathBuf {
+    base_dir()
+        .join("state")
+        .join("pids")
+        .join(format!("{project}_{pane}.pid"))
+}
+
+/// Ensure ~/.on/ and its `state/`, `state/pids/`, and `logs/` subdirectories exist
 pub fn ensure_dirs() -> Result<()> {
     let base = base_dir();
     fs::create_dir_all(&base).context("Failed to create ~/.on/")?;
     fs::create_dir_all(base.join("state")).context("Failed to create ~/.on/state/")?;
+    fs::create_dir_all(base.join("state").join("pids"))
+        .context("Failed to create ~/.on/state/pids/")?;
     fs::create_dir_all(base.join("logs")).context("Failed to create ~/.on/logs/")?;
     Ok(())
 }
@@ -171,21 +192,36 @@ fn merge_configs(base: Config, current: Config) -> Config {
     }
 }
 
-/// Load and parse a project config, expanding ~ paths
+/// Load and parse a project config, expanding ~ paths and resolving
+/// `extends:` chains of arbitrary depth. Cycles return an error rather
+/// than recursing forever.
 pub fn load(name: &str) -> Result<Config> {
-    let raw = parse_raw(name)?;
-    let mut config = if let Some(ref base_name) = raw.extends {
-        let base_raw = parse_raw(base_name)
-            .with_context(|| format!("Failed to load base config '{base_name}'"))?;
-        let base = resolve_config(base_raw);
-        let current = resolve_config(raw);
-        merge_configs(base, current)
-    } else {
-        resolve_config(raw)
-    };
+    let mut visiting = Vec::new();
+    let mut config = load_with_chain(name, &mut visiting)?;
     expand_paths(&mut config);
     validate_config(&config)?;
     Ok(config)
+}
+
+fn load_with_chain(name: &str, visiting: &mut Vec<String>) -> Result<Config> {
+    if visiting.iter().any(|n| n == name) {
+        visiting.push(name.to_string());
+        bail!("extends cycle detected: {}", visiting.join(" -> "));
+    }
+    visiting.push(name.to_string());
+
+    let raw = parse_raw(name)?;
+    let current = resolve_config(raw.clone());
+    let result = if let Some(ref base_name) = raw.extends {
+        let base = load_with_chain(base_name, visiting)
+            .with_context(|| format!("Failed to load base config '{base_name}'"))?;
+        merge_configs(base, current)
+    } else {
+        current
+    };
+
+    visiting.pop();
+    Ok(result)
 }
 
 fn validate_config(config: &Config) -> Result<()> {
@@ -236,6 +272,72 @@ fn expand_paths(config: &mut Config) {
             }
         }
     }
+}
+
+/// A problem discovered while validating a project config.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ConfigIssue {
+    pub project: String,
+    pub message: String,
+}
+
+/// Keep only issues whose project matches `name`. `None` is a no-op.
+pub fn filter_issues_by_project(issues: Vec<ConfigIssue>, name: Option<&str>) -> Vec<ConfigIssue> {
+    match name {
+        None => issues,
+        Some(n) => issues.into_iter().filter(|i| i.project == n).collect(),
+    }
+}
+
+/// Validate every `*.yaml` config in a directory. Returns a list of issues
+/// (YAML parse failures, dangling `extends:` references). Used by `on doctor`.
+pub fn validate_configs_in(dir: &std::path::Path) -> Vec<ConfigIssue> {
+    let mut issues = Vec::new();
+    let Ok(entries) = fs::read_dir(dir) else {
+        return issues;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.extension().and_then(|e| e.to_str()) != Some("yaml") {
+            continue;
+        }
+        let Some(project) = path.file_stem().and_then(|s| s.to_str()).map(str::to_owned) else {
+            continue;
+        };
+        let content = match fs::read_to_string(&path) {
+            Ok(c) => c,
+            Err(e) => {
+                issues.push(ConfigIssue {
+                    project,
+                    message: format!("read failed: {e}"),
+                });
+                continue;
+            }
+        };
+        let raw: RawConfig = match serde_yaml::from_str(&content) {
+            Ok(r) => r,
+            Err(e) => {
+                issues.push(ConfigIssue {
+                    project,
+                    message: format!("yaml parse error: {e}"),
+                });
+                continue;
+            }
+        };
+        if let Some(base) = raw.extends.as_deref() {
+            let base_path = dir.join(format!("{base}.yaml"));
+            if !base_path.exists() {
+                issues.push(ConfigIssue {
+                    project,
+                    message: format!(
+                        "extends '{base}' but {} does not exist",
+                        base_path.display()
+                    ),
+                });
+            }
+        }
+    }
+    issues
 }
 
 /// List all project names from ~/.on/*.yaml
@@ -343,6 +445,34 @@ pub struct DetectedProject {
     pub panes: Vec<DetectedPane>,
 }
 
+fn detect_node_cmd(dir: &std::path::Path) -> &'static str {
+    let Ok(content) = fs::read_to_string(dir.join("package.json")) else {
+        return "npm run dev";
+    };
+    let Ok(json) = serde_json::from_str::<serde_json::Value>(&content) else {
+        return "npm run dev";
+    };
+    let scripts = json.get("scripts").and_then(serde_json::Value::as_object);
+    let Some(scripts) = scripts else {
+        return "npm run dev";
+    };
+    if scripts.contains_key("dev") {
+        "npm run dev"
+    } else if scripts.contains_key("start") {
+        "npm start"
+    } else {
+        "npm run dev"
+    }
+}
+
+fn detect_python_cmd(dir: &std::path::Path) -> &'static str {
+    if dir.join("manage.py").exists() {
+        "python manage.py runserver"
+    } else {
+        "python main.py"
+    }
+}
+
 fn detect_in_dir(dir: &std::path::Path, name: &str) -> Option<DetectedPane> {
     if dir.join("Cargo.toml").exists() {
         Some(DetectedPane {
@@ -352,29 +482,17 @@ fn detect_in_dir(dir: &std::path::Path, name: &str) -> Option<DetectedPane> {
             port: None,
         })
     } else if dir.join("package.json").exists() {
-        let cmd = if dir.join("package.json").exists() {
-            let content = fs::read_to_string(dir.join("package.json")).unwrap_or_default();
-            if content.contains("\"dev\"") {
-                "npm run dev"
-            } else if content.contains("\"start\"") {
-                "npm start"
-            } else {
-                "npm run dev"
-            }
-        } else {
-            "npm run dev"
-        };
         Some(DetectedPane {
             name: name.to_string(),
             dir: dir.to_string_lossy().to_string(),
-            cmd: Some(cmd.to_string()),
+            cmd: Some(detect_node_cmd(dir).to_string()),
             port: Some(3000),
         })
     } else if dir.join("pyproject.toml").exists() || dir.join("requirements.txt").exists() {
         Some(DetectedPane {
             name: name.to_string(),
             dir: dir.to_string_lossy().to_string(),
-            cmd: Some("python main.py".to_string()),
+            cmd: Some(detect_python_cmd(dir).to_string()),
             port: Some(8000),
         })
     } else if dir.join("go.mod").exists() {
@@ -382,6 +500,13 @@ fn detect_in_dir(dir: &std::path::Path, name: &str) -> Option<DetectedPane> {
             name: name.to_string(),
             dir: dir.to_string_lossy().to_string(),
             cmd: Some("go run .".to_string()),
+            port: None,
+        })
+    } else if dir.join("docker-compose.yml").exists() || dir.join("docker-compose.yaml").exists() {
+        Some(DetectedPane {
+            name: name.to_string(),
+            dir: dir.to_string_lossy().to_string(),
+            cmd: Some("docker compose up".to_string()),
             port: None,
         })
     } else {
@@ -479,6 +604,7 @@ pub fn create_config_from_detection(
 
 #[cfg(test)]
 mod tests {
+    #![allow(clippy::unwrap_used, clippy::expect_used)]
     use super::*;
 
     #[test]
@@ -629,9 +755,9 @@ iterm:
             env: HashMap::new(),
         };
         let cmd = pane.build_command("myproject", false);
-        assert!(cmd.contains("cd /tmp/test"));
+        assert!(cmd.contains("cd '/tmp/test'"));
         assert!(cmd.contains("echo $$"));
-        assert!(cmd.contains(".on_myproject_dev.pid"));
+        assert!(cmd.contains("myproject_dev.pid"));
         assert!(cmd.contains("npm run dev"));
         assert!(!cmd.contains("exec"));
     }
@@ -645,7 +771,7 @@ iterm:
             env: HashMap::new(),
         };
         let cmd = pane.build_command("myproject", false);
-        assert_eq!(cmd, "cd /tmp/test");
+        assert_eq!(cmd, "cd '/tmp/test'");
     }
 
     #[test]
@@ -660,10 +786,68 @@ iterm:
             env,
         };
         let cmd = pane.build_command("myproject", false);
-        assert!(cmd.starts_with("cd /tmp/test && "));
+        assert!(cmd.starts_with("cd '/tmp/test' && "));
         assert!(cmd.contains("export PORT='3000'"));
         assert!(cmd.contains("export RUST_LOG='debug'"));
         assert!(cmd.contains("cargo run"));
+    }
+
+    #[test]
+    fn pid_file_path_under_state_pids() {
+        let path = pid_file_path("myproj", "dev");
+        let expected = base_dir().join("state").join("pids").join("myproj_dev.pid");
+        assert_eq!(path, expected);
+    }
+
+    #[test]
+    fn build_pane_command_pid_file_not_in_tmp() {
+        let pane = PaneConfig {
+            name: "dev".to_string(),
+            dir: "/tmp/x".to_string(),
+            cmd: Some("cargo run".to_string()),
+            env: HashMap::new(),
+        };
+        let cmd = pane.build_command("myproj", false);
+        assert!(
+            !cmd.contains("/tmp/.on_"),
+            "PID file must not be in /tmp (symlink attack risk): {cmd}"
+        );
+        let expected = pid_file_path("myproj", "dev");
+        assert!(
+            cmd.contains(expected.to_str().unwrap()),
+            "expected PID file path {} in command: {cmd}",
+            expected.display()
+        );
+    }
+
+    #[test]
+    fn ensure_dirs_creates_pids_dir() {
+        ensure_dirs().unwrap();
+        assert!(base_dir().join("state").join("pids").exists());
+    }
+
+    #[test]
+    fn build_pane_command_escapes_dir_with_spaces() {
+        let pane = PaneConfig {
+            name: "dev".to_string(),
+            dir: "/tmp/my project".to_string(),
+            cmd: None,
+            env: HashMap::new(),
+        };
+        let cmd = pane.build_command("proj", false);
+        assert_eq!(cmd, "cd '/tmp/my project'");
+    }
+
+    #[test]
+    fn build_pane_command_escapes_dir_with_single_quote() {
+        let pane = PaneConfig {
+            name: "dev".to_string(),
+            dir: "/tmp/it's".to_string(),
+            cmd: None,
+            env: HashMap::new(),
+        };
+        let cmd = pane.build_command("proj", false);
+        assert_eq!(cmd, "cd '/tmp/it'\\''s'");
     }
 
     #[test]
@@ -815,6 +999,76 @@ hooks:
     }
 
     #[test]
+    fn extends_supports_multi_level_inheritance() {
+        let grand = "_on_test_grand";
+        let mid = "_on_test_mid";
+        let leaf = "_on_test_leaf";
+        let cleanup = || {
+            let _ = fs::remove_file(config_path(grand));
+            let _ = fs::remove_file(config_path(mid));
+            let _ = fs::remove_file(config_path(leaf));
+        };
+        cleanup();
+
+        ensure_dirs().unwrap();
+        fs::write(
+            config_path(grand),
+            "name: _on_test_grand\neditor:\n  cmd: vim\n",
+        )
+        .unwrap();
+        fs::write(
+            config_path(mid),
+            "name: _on_test_mid\nextends: _on_test_grand\nbrowser:\n  - http://localhost\n",
+        )
+        .unwrap();
+        fs::write(
+            config_path(leaf),
+            "name: _on_test_leaf\nextends: _on_test_mid\n",
+        )
+        .unwrap();
+
+        let config = load(leaf).unwrap();
+        assert_eq!(config.name, "_on_test_leaf");
+        // From grand
+        assert_eq!(config.editor.unwrap().cmd, Some("vim".to_string()));
+        // From mid
+        assert_eq!(config.browser.unwrap(), vec!["http://localhost"]);
+
+        cleanup();
+    }
+
+    #[test]
+    fn extends_detects_cycle() {
+        let a = "_on_test_cycle_a";
+        let b = "_on_test_cycle_b";
+        let cleanup = || {
+            let _ = fs::remove_file(config_path(a));
+            let _ = fs::remove_file(config_path(b));
+        };
+        cleanup();
+        ensure_dirs().unwrap();
+        fs::write(
+            config_path(a),
+            "name: _on_test_cycle_a\nextends: _on_test_cycle_b\n",
+        )
+        .unwrap();
+        fs::write(
+            config_path(b),
+            "name: _on_test_cycle_b\nextends: _on_test_cycle_a\n",
+        )
+        .unwrap();
+
+        let err = load(a).expect_err("expected cycle detection error");
+        let msg = format!("{err:#}").to_lowercase();
+        assert!(
+            msg.contains("cycle") || msg.contains("circular") || msg.contains("loop"),
+            "expected cycle-related error, got: {msg}"
+        );
+
+        cleanup();
+    }
+
+    #[test]
     fn extends_yaml_roundtrip() {
         let name_base = "_on_test_base";
         let name_child = "_on_test_child";
@@ -843,6 +1097,22 @@ hooks:
 
         let _ = fs::remove_file(&base_path);
         let _ = fs::remove_file(&child_path);
+    }
+
+    #[test]
+    fn home_or_fallback_uses_home_when_some() {
+        assert_eq!(
+            home_or_fallback(Some(PathBuf::from("/h"))),
+            PathBuf::from("/h")
+        );
+    }
+
+    #[test]
+    fn home_or_fallback_falls_back_to_cwd() {
+        // No home → must NOT panic. Falling back to `.` is acceptable; what
+        // matters is we don't crash on sandboxes that hide HOME.
+        let path = home_or_fallback(None);
+        assert_eq!(path, PathBuf::from("."));
     }
 
     #[test]
@@ -900,6 +1170,78 @@ hooks:
     }
 
     #[test]
+    fn detect_node_with_dev_script() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::write(
+            dir.path().join("package.json"),
+            r#"{"scripts": {"dev": "vite", "build": "vite build"}}"#,
+        )
+        .unwrap();
+        let pane = detect_in_dir(dir.path(), "app").unwrap();
+        assert_eq!(pane.cmd, Some("npm run dev".to_string()));
+    }
+
+    #[test]
+    fn detect_node_with_start_only() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::write(
+            dir.path().join("package.json"),
+            r#"{"scripts": {"start": "node index.js"}}"#,
+        )
+        .unwrap();
+        let pane = detect_in_dir(dir.path(), "app").unwrap();
+        assert_eq!(pane.cmd, Some("npm start".to_string()));
+    }
+
+    #[test]
+    fn detect_node_ignores_devdependencies_substring() {
+        // The previous implementation grep'd for "dev" — that matches
+        // devDependencies even when there is no dev script. We should
+        // pick `start` here, not `dev`.
+        let dir = tempfile::tempdir().unwrap();
+        fs::write(
+            dir.path().join("package.json"),
+            r#"{"devDependencies": {"vite": "^4"}, "scripts": {"start": "node ."}}"#,
+        )
+        .unwrap();
+        let pane = detect_in_dir(dir.path(), "app").unwrap();
+        assert_eq!(pane.cmd, Some("npm start".to_string()));
+    }
+
+    #[test]
+    fn detect_python_django_manage_py() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::write(dir.path().join("manage.py"), "#!/usr/bin/env python\n").unwrap();
+        fs::write(
+            dir.path().join("pyproject.toml"),
+            "[project]\nname = \"app\"\n",
+        )
+        .unwrap();
+        let pane = detect_in_dir(dir.path(), "app").unwrap();
+        assert!(
+            pane.cmd.as_deref().is_some_and(|c| c.contains("manage.py")),
+            "expected manage.py command, got {:?}",
+            pane.cmd
+        );
+    }
+
+    #[test]
+    fn detect_docker_compose() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::write(dir.path().join("docker-compose.yml"), "services: {}\n").unwrap();
+        let pane = detect_in_dir(dir.path(), "stack").unwrap();
+        assert_eq!(pane.cmd, Some("docker compose up".to_string()));
+    }
+
+    #[test]
+    fn detect_docker_compose_yaml_extension() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::write(dir.path().join("docker-compose.yaml"), "services: {}\n").unwrap();
+        let pane = detect_in_dir(dir.path(), "stack").unwrap();
+        assert_eq!(pane.cmd, Some("docker compose up".to_string()));
+    }
+
+    #[test]
     fn detect_node_project() {
         let dir = tempfile::tempdir().unwrap();
         fs::write(
@@ -940,6 +1282,98 @@ hooks:
         let result = detect_project(dir.path());
         assert_eq!(result.panes.len(), 1);
         assert_eq!(result.panes[0].name, "shell");
+    }
+
+    #[test]
+    fn validate_returns_empty_for_valid_configs() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::write(dir.path().join("ok.yaml"), "name: ok\n").unwrap();
+        let issues = validate_configs_in(dir.path());
+        assert!(issues.is_empty(), "expected no issues, got {issues:?}");
+    }
+
+    #[test]
+    fn validate_reports_yaml_parse_error() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::write(dir.path().join("broken.yaml"), "name: [unclosed\n").unwrap();
+        let issues = validate_configs_in(dir.path());
+        assert_eq!(issues.len(), 1);
+        assert_eq!(issues[0].project, "broken");
+        assert!(
+            issues[0].message.to_lowercase().contains("parse")
+                || issues[0].message.to_lowercase().contains("yaml"),
+            "expected parse error, got {}",
+            issues[0].message
+        );
+    }
+
+    #[test]
+    fn validate_reports_missing_extends_base() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::write(
+            dir.path().join("child.yaml"),
+            "name: child\nextends: nonexistent\n",
+        )
+        .unwrap();
+        let issues = validate_configs_in(dir.path());
+        assert_eq!(issues.len(), 1);
+        assert_eq!(issues[0].project, "child");
+        assert!(
+            issues[0].message.contains("nonexistent"),
+            "expected message to mention the missing base, got {}",
+            issues[0].message
+        );
+    }
+
+    #[test]
+    fn filter_issues_keeps_only_named_project() {
+        let issues = vec![
+            ConfigIssue {
+                project: "a".to_string(),
+                message: "x".to_string(),
+            },
+            ConfigIssue {
+                project: "b".to_string(),
+                message: "y".to_string(),
+            },
+            ConfigIssue {
+                project: "a".to_string(),
+                message: "z".to_string(),
+            },
+        ];
+        let filtered = filter_issues_by_project(issues, Some("a"));
+        assert_eq!(filtered.len(), 2);
+        assert!(filtered.iter().all(|i| i.project == "a"));
+    }
+
+    #[test]
+    fn filter_issues_none_returns_all() {
+        let issues = vec![ConfigIssue {
+            project: "a".to_string(),
+            message: "x".to_string(),
+        }];
+        assert_eq!(filter_issues_by_project(issues.clone(), None).len(), 1);
+    }
+
+    #[test]
+    fn validate_ignores_non_yaml_files() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::write(dir.path().join("README.md"), "hello").unwrap();
+        let issues = validate_configs_in(dir.path());
+        assert!(issues.is_empty());
+    }
+
+    #[test]
+    fn validate_returns_empty_for_present_extends() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::write(dir.path().join("base.yaml"), "name: base\n").unwrap();
+        fs::write(
+            dir.path().join("child.yaml"),
+            "name: child\nextends: base\n",
+        )
+        .unwrap();
+        let issues = validate_configs_in(dir.path());
+        assert!(issues.is_empty(), "expected no issues, got {issues:?}");
     }
 
     #[test]

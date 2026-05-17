@@ -9,6 +9,82 @@ use colored::Colorize;
 use crate::selection::LaunchSelection;
 use crate::{browser, config, editor, git, iterm, port, state, tmux};
 
+/// Interpret a yes/no prompt response, defaulting to yes on empty input.
+fn parse_yes_default(input: &str) -> bool {
+    !matches!(input.trim().to_lowercase().as_str(), "n" | "no")
+}
+
+/// Map an `ON_NONINTERACTIVE` env var value to "should skip prompts".
+/// Unset, empty, `0`, `false`, and `no` are interactive; anything else
+/// disables prompts (defaults are chosen automatically).
+fn parse_non_interactive(value: Option<&str>) -> bool {
+    match value.map(str::trim) {
+        None | Some("" | "0") => false,
+        Some(v) => !matches!(v.to_lowercase().as_str(), "false" | "no"),
+    }
+}
+
+fn is_non_interactive() -> bool {
+    parse_non_interactive(std::env::var("ON_NONINTERACTIVE").ok().as_deref())
+}
+
+#[derive(Debug, PartialEq, Eq)]
+enum PortAction {
+    Kill,
+    Skip,
+    Abort,
+}
+
+/// Interpret a kill/skip/abort prompt response, defaulting to skip.
+fn parse_port_action(input: &str) -> PortAction {
+    match input.trim().to_lowercase().as_str() {
+        "k" | "kill" => PortAction::Kill,
+        "a" | "abort" => PortAction::Abort,
+        _ => PortAction::Skip,
+    }
+}
+
+/// Read a single line from stdin and return the prompt response interpreted
+/// as yes/no. In non-interactive mode (`ON_NONINTERACTIVE=1`) returns `true`
+/// without touching stdin so scripts don't hang on the prompt.
+fn prompt_yes_default(prompt: &str) -> Result<bool> {
+    if is_non_interactive() {
+        return Ok(true);
+    }
+    print!("{prompt}");
+    io::stdout().flush().context("failed to flush stdout")?;
+    let mut input = String::new();
+    io::stdin()
+        .read_line(&mut input)
+        .context("failed to read stdin")?;
+    Ok(parse_yes_default(&input))
+}
+
+/// Print a prompt, read a single line, return the trimmed value.
+fn prompt_line(prompt: &str) -> Result<String> {
+    print!("{prompt}");
+    io::stdout().flush().context("failed to flush stdout")?;
+    let mut input = String::new();
+    io::stdin()
+        .read_line(&mut input)
+        .context("failed to read stdin")?;
+    Ok(input.trim().to_string())
+}
+
+fn prompt_port_action(prompt: &str) -> Result<PortAction> {
+    if is_non_interactive() {
+        // Safe default: don't kill anyone else's process behind the user's back.
+        return Ok(PortAction::Skip);
+    }
+    print!("{prompt}");
+    io::stdout().flush().context("failed to flush stdout")?;
+    let mut input = String::new();
+    io::stdin()
+        .read_line(&mut input)
+        .context("failed to read stdin")?;
+    Ok(parse_port_action(&input))
+}
+
 fn run_hooks(hooks: &[String], phase: &str) -> Result<()> {
     for cmd in hooks {
         println!("  {} {cmd}", phase.dimmed());
@@ -23,61 +99,54 @@ fn run_hooks(hooks: &[String], phase: &str) -> Result<()> {
     Ok(())
 }
 
-/// Main launch flow for a project
-#[allow(clippy::too_many_lines)]
-pub fn run(name: &str, selection: LaunchSelection) -> Result<()> {
-    config::ensure_dirs()?;
-    let cfg = config::load(name)?;
-
-    // Check if already running (only when launching terminal panes)
-    if selection.terminal && state::is_running(name)? {
-        println!(
-            "{}",
-            format!("Project '{name}' is already running.").yellow()
-        );
-        print!("Restart? [Y/n] ");
-        io::stdout().flush().unwrap();
-        let mut input = String::new();
-        io::stdin().read_line(&mut input).unwrap();
-        let input = input.trim().to_lowercase();
-        if input == "n" || input == "no" {
-            println!("Aborted.");
-            return Ok(());
-        }
-        stop(name)?;
+/// Returns `Ok(false)` when the user chose to abort, `Ok(true)` to proceed.
+fn confirm_restart_if_running(name: &str, selection: LaunchSelection) -> Result<bool> {
+    if !(selection.terminal && state::is_running(name)?) {
+        return Ok(true);
     }
+    println!(
+        "{}",
+        format!("Project '{name}' is already running.").yellow()
+    );
+    if !prompt_yes_default("Restart? [Y/n] ")? {
+        println!("Aborted.");
+        return Ok(false);
+    }
+    stop(name)?;
+    Ok(true)
+}
 
-    // Git status check (only when checks.dirty_git: true and terminal is selected)
+fn confirm_clean_git(cfg: &config::Config, selection: LaunchSelection) -> Result<bool> {
     let dirty_git_enabled = cfg
         .checks
         .as_ref()
         .and_then(|c| c.dirty_git)
         .unwrap_or(false);
-    if selection.terminal && dirty_git_enabled {
-        if let Some(ref term_cfg) = cfg.terminal {
-            let dirs: Vec<String> = term_cfg.panes.iter().map(|p| p.dir.clone()).collect();
-            let dirty = git::check_status(&dirs);
-            if !dirty.is_empty() {
-                for d in &dirty {
-                    println!(
-                        "{}",
-                        format!("  {} has {} uncommitted file(s)", d.dir, d.file_count).yellow()
-                    );
-                }
-                print!("Continue? [Y/n] ");
-                io::stdout().flush().unwrap();
-                let mut input = String::new();
-                io::stdin().read_line(&mut input).unwrap();
-                let input = input.trim().to_lowercase();
-                if input == "n" || input == "no" {
-                    println!("Aborted.");
-                    return Ok(());
-                }
-            }
-        }
+    if !(selection.terminal && dirty_git_enabled) {
+        return Ok(true);
     }
+    let Some(ref term_cfg) = cfg.terminal else {
+        return Ok(true);
+    };
+    let dirs: Vec<String> = term_cfg.panes.iter().map(|p| p.dir.clone()).collect();
+    let dirty = git::check_status(&dirs);
+    if dirty.is_empty() {
+        return Ok(true);
+    }
+    for d in &dirty {
+        println!(
+            "{}",
+            format!("  {} has {} uncommitted file(s)", d.dir, d.file_count).yellow()
+        );
+    }
+    if !prompt_yes_default("Continue? [Y/n] ")? {
+        println!("Aborted.");
+        return Ok(false);
+    }
+    Ok(true)
+}
 
-    // Port conflict check — only for selected components
+fn resolve_port_conflicts(cfg: &config::Config, selection: LaunchSelection) -> Result<bool> {
     let urls: Vec<String> = if selection.browser {
         cfg.browser.clone().unwrap_or_default()
     } else {
@@ -92,35 +161,49 @@ pub fn run(name: &str, selection: LaunchSelection) -> Result<()> {
         Vec::new()
     };
     let ports = port::extract_ports(&urls, &cmds);
+    let conflicts = port::check_ports(&ports);
 
-    for p in &ports {
-        if let Some(conflict) = port::check_port(*p) {
-            println!(
-                "{}",
-                format!(
-                    "  Port {} is occupied (process: {}, PID: {})",
-                    conflict.port, conflict.process_name, conflict.pid
-                )
-                .yellow()
-            );
-            print!("[K]ill / [S]kip / [A]bort? ");
-            io::stdout().flush().unwrap();
-            let mut input = String::new();
-            io::stdin().read_line(&mut input).unwrap();
-            match input.trim().to_lowercase().as_str() {
-                "k" | "kill" => {
-                    port::kill_pid(conflict.pid);
-                    println!("  Killed PID {}", conflict.pid);
-                }
-                "a" | "abort" => {
-                    println!("Aborted.");
-                    return Ok(());
-                }
-                _ => {
-                    println!("  Skipped port {p}");
-                }
+    for conflict in &conflicts {
+        let cmdline =
+            port::process_cmdline(conflict.pid).unwrap_or_else(|| conflict.process_name.clone());
+        println!(
+            "{}",
+            format!(
+                "  Port {} is occupied (PID {}: {})",
+                conflict.port, conflict.pid, cmdline
+            )
+            .yellow()
+        );
+        match prompt_port_action("[K]ill / [S]kip / [A]bort? ")? {
+            PortAction::Kill => {
+                port::kill_pid(conflict.pid);
+                println!("  Killed PID {}", conflict.pid);
+            }
+            PortAction::Abort => {
+                println!("Aborted.");
+                return Ok(false);
+            }
+            PortAction::Skip => {
+                println!("  Skipped port {}", conflict.port);
             }
         }
+    }
+    Ok(true)
+}
+
+/// Main launch flow for a project
+pub fn run(name: &str, selection: LaunchSelection) -> Result<()> {
+    config::ensure_dirs()?;
+    let cfg = config::load(name)?;
+
+    if !confirm_restart_if_running(name, selection)? {
+        return Ok(());
+    }
+    if !confirm_clean_git(&cfg, selection)? {
+        return Ok(());
+    }
+    if !resolve_port_conflicts(&cfg, selection)? {
+        return Ok(());
     }
 
     // Pre-launch hooks
@@ -201,11 +284,12 @@ fn collect_pids(project: &str, panes: &[config::PaneConfig]) -> Vec<state::PaneS
         if pane.cmd.is_none() {
             continue;
         }
-        let pid_file = format!("/tmp/.on_{project}_{}.pid", pane.name);
+        let pid_file = config::pid_file_path(project, &pane.name);
         if let Some(pid) = poll_pid_file(&pid_file) {
             results.push(state::PaneState {
                 name: pane.name.clone(),
                 pid,
+                process_started_at: state::process_started_at(pid),
             });
         }
     }
@@ -214,7 +298,7 @@ fn collect_pids(project: &str, panes: &[config::PaneConfig]) -> Vec<state::PaneS
 }
 
 /// Poll for a PID file, checking every 100ms for up to 3 seconds
-fn poll_pid_file(path: &str) -> Option<u32> {
+fn poll_pid_file(path: &std::path::Path) -> Option<u32> {
     for _ in 0..30 {
         if let Ok(content) = std::fs::read_to_string(path) {
             let pid = content.trim().parse::<u32>().ok();
@@ -280,7 +364,8 @@ pub fn log(name: &str, pane: Option<&str>, follow: bool) -> Result<()> {
                 if log_file.exists() {
                     if follow {
                         Command::new("tail")
-                            .args(["-f", log_file.to_str().unwrap()])
+                            .arg("-f")
+                            .arg(&log_file)
                             .status()
                             .context("Failed to tail log file")?;
                     } else {
@@ -317,7 +402,7 @@ pub fn status(name: &str) -> Result<()> {
 
             println!("Panes:");
             for pane in &s.panes {
-                let alive = state::is_pid_alive(pane.pid);
+                let alive = state::verify_pane_alive(pane);
                 if alive {
                     println!(
                         "  {} {:<12} PID {:<8} {}",
@@ -347,8 +432,11 @@ pub fn status(name: &str) -> Result<()> {
             if !ports.is_empty() {
                 println!();
                 println!("Ports:");
+                let conflicts = port::check_ports(&ports);
+                let by_port: std::collections::HashMap<u16, &port::PortConflict> =
+                    conflicts.iter().map(|c| (c.port, c)).collect();
                 for p in &ports {
-                    if let Some(c) = port::check_port(*p) {
+                    if let Some(c) = by_port.get(p) {
                         println!("  {}  {} (PID {})", p, "listening".green(), c.pid);
                     } else {
                         println!("  {}  {}", p, "free".dimmed());
@@ -425,36 +513,107 @@ pub fn stop_all() -> Result<()> {
     Ok(())
 }
 
-/// Kill all process trees: SIGTERM groups + children, wait, then SIGKILL survivors
+/// Parse `ps -axo pid,ppid` output into a parent → children map.
+/// Ignores the header line and any line that doesn't have two integers.
+fn parse_ps_pid_ppid(output: &str) -> std::collections::HashMap<u32, Vec<u32>> {
+    let mut tree: std::collections::HashMap<u32, Vec<u32>> = std::collections::HashMap::new();
+    for line in output.lines() {
+        let mut it = line.split_whitespace();
+        let (Some(child_s), Some(parent_s)) = (it.next(), it.next()) else {
+            continue;
+        };
+        let (Ok(child), Ok(parent)) = (child_s.parse::<u32>(), parent_s.parse::<u32>()) else {
+            continue;
+        };
+        tree.entry(parent).or_default().push(child);
+    }
+    tree
+}
+
+/// Breadth-first collect every descendant PID of `root` from a parent→children map.
+/// Defends against cycles (which shouldn't exist in /proc) by visiting each PID once.
+fn descendants_in(tree: &std::collections::HashMap<u32, Vec<u32>>, root: u32) -> Vec<u32> {
+    let mut out = Vec::new();
+    let mut seen = std::collections::HashSet::new();
+    seen.insert(root);
+    let mut queue = std::collections::VecDeque::new();
+    queue.push_back(root);
+    while let Some(parent) = queue.pop_front() {
+        if let Some(children) = tree.get(&parent) {
+            for &child in children {
+                if seen.insert(child) {
+                    out.push(child);
+                    queue.push_back(child);
+                }
+            }
+        }
+    }
+    out
+}
+
+/// Snapshot the system process tree by running `ps -axo pid,ppid`.
+fn process_tree() -> std::collections::HashMap<u32, Vec<u32>> {
+    let Ok(output) = Command::new("ps").args(["-axo", "pid,ppid"]).output() else {
+        return std::collections::HashMap::new();
+    };
+    if !output.status.success() {
+        return std::collections::HashMap::new();
+    }
+    parse_ps_pid_ppid(&String::from_utf8_lossy(&output.stdout))
+}
+
+struct KillTarget {
+    pids: Vec<u32>,
+    pg: String,
+}
+
+/// Kill every descendant of each pane PID (and the PG it belongs to).
+///
+/// `pkill -P` only catches direct children, which misses grandchildren that
+/// daemonized themselves into a new session — e.g. `pnpm dev` spawns `node`
+/// which spawns `rspack-node` and the latter survives a SIGTERM aimed at
+/// the pnpm process. Snapshot the system process tree once with `ps`, BFS
+/// all descendants, signal them explicitly.
 fn kill_all_process_groups(panes: &[state::PaneState]) {
-    let targets: Vec<(u32, String)> = panes
+    let tree = process_tree();
+
+    // For each pane root, gather (root + every descendant) and its PG.
+    let targets: Vec<KillTarget> = panes
         .iter()
-        .map(|p| (p.pid, resolve_kill_target(p.pid)))
+        .map(|p| {
+            let mut pids = vec![p.pid];
+            pids.extend(descendants_in(&tree, p.pid));
+            KillTarget {
+                pids,
+                pg: resolve_kill_target(p.pid),
+            }
+        })
         .collect();
 
-    // SIGTERM all process groups at once
-    for (_, target) in &targets {
-        let _ = Command::new("kill").args(["--", target]).output();
+    // SIGTERM the process group (catches everything still in PG) plus each
+    // PID individually (catches the orphans that broke out).
+    for t in &targets {
+        let _ = Command::new("kill").args(["--", &t.pg]).output();
+        for pid in &t.pids {
+            let _ = Command::new("kill")
+                .args(["-TERM", &pid.to_string()])
+                .output();
+        }
     }
 
-    // Also SIGTERM child processes (command may be in a different process group)
-    for (pid, _) in &targets {
-        let _ = Command::new("pkill")
-            .args(["-TERM", "-P", &pid.to_string()])
-            .output();
-    }
-
-    // Single wait
+    // Give them a moment to clean up.
     thread::sleep(Duration::from_millis(300));
 
-    // SIGKILL any survivors
-    for (pid, target) in &targets {
-        if state::is_pid_alive(*pid) {
-            let _ = Command::new("kill").args(["-9", "--", target]).output();
+    // SIGKILL any survivor.
+    for t in &targets {
+        let _ = Command::new("kill").args(["-9", "--", &t.pg]).output();
+        for pid in &t.pids {
+            if state::is_pid_alive(*pid) {
+                let _ = Command::new("kill")
+                    .args(["-9", &pid.to_string()])
+                    .output();
+            }
         }
-        let _ = Command::new("pkill")
-            .args(["-9", "-P", &pid.to_string()])
-            .output();
     }
 }
 
@@ -494,12 +653,7 @@ pub fn list() -> Result<()> {
     for project in &projects {
         let (status, pane_names) = match state::load(project)? {
             Some(s) => {
-                let alive: Vec<&str> = s
-                    .panes
-                    .iter()
-                    .filter(|p| state::is_pid_alive(p.pid))
-                    .map(|p| p.name.as_str())
-                    .collect();
+                let alive = state::alive_pane_names(&s);
                 if alive.is_empty() {
                     ("stopped".to_string(), "-".to_string())
                 } else {
@@ -525,7 +679,7 @@ pub fn edit(name: &str) -> Result<()> {
 
     let editor_cmd = std::env::var("EDITOR").unwrap_or_else(|_| "vim".to_string());
     Command::new(&editor_cmd)
-        .arg(path.to_str().unwrap())
+        .arg(&path)
         .status()
         .with_context(|| format!("Failed to open editor '{editor_cmd}'"))?;
     Ok(())
@@ -538,7 +692,7 @@ pub fn new_project(name: &str) -> Result<()> {
 
     let editor_cmd = std::env::var("EDITOR").unwrap_or_else(|_| "vim".to_string());
     Command::new(&editor_cmd)
-        .arg(path.to_str().unwrap())
+        .arg(&path)
         .status()
         .with_context(|| format!("Failed to open editor '{editor_cmd}'"))?;
     Ok(())
@@ -572,7 +726,7 @@ pub fn clone_project(source: &str, target: &str) -> Result<()> {
 
     let editor_cmd = std::env::var("EDITOR").unwrap_or_else(|_| "vim".to_string());
     Command::new(&editor_cmd)
-        .arg(tgt_path.to_str().unwrap())
+        .arg(&tgt_path)
         .status()
         .with_context(|| format!("Failed to open editor '{editor_cmd}'"))?;
     Ok(())
@@ -596,15 +750,11 @@ pub fn init() -> Result<()> {
     println!();
 
     // Confirm project name
-    print!("Project name [{}]: ", detected.name);
-    io::stdout().flush().unwrap();
-    let mut name_input = String::new();
-    io::stdin().read_line(&mut name_input).unwrap();
-    let name = name_input.trim();
-    let name = if name.is_empty() {
+    let name_input = prompt_line(&format!("Project name [{}]: ", detected.name))?;
+    let name: &str = if name_input.is_empty() {
         &detected.name
     } else {
-        name
+        &name_input
     };
 
     let path = config::config_path(name);
@@ -616,15 +766,11 @@ pub fn init() -> Result<()> {
     }
 
     // Confirm editor
-    print!("Editor [code]: ");
-    io::stdout().flush().unwrap();
-    let mut editor_input = String::new();
-    io::stdin().read_line(&mut editor_input).unwrap();
-    let editor_cmd = editor_input.trim();
-    let editor_cmd = if editor_cmd.is_empty() {
+    let editor_input = prompt_line("Editor [code]: ")?;
+    let editor_cmd: &str = if editor_input.is_empty() {
         "code"
     } else {
-        editor_cmd
+        &editor_input
     };
 
     let yaml = config::create_config_from_detection(name, &detected, editor_cmd);
@@ -634,10 +780,31 @@ pub fn init() -> Result<()> {
 
     let editor = std::env::var("EDITOR").unwrap_or_else(|_| "vim".to_string());
     Command::new(&editor)
-        .arg(path.to_str().unwrap())
+        .arg(&path)
         .status()
         .with_context(|| format!("Failed to open editor '{editor}'"))?;
     Ok(())
+}
+
+/// Validate one or all project configs (parse + extends sanity). Exits with
+/// non-zero status when any issue is found, so it's usable in scripts.
+pub fn validate(project: Option<&str>) -> Result<()> {
+    config::ensure_dirs()?;
+    let issues = config::validate_configs_in(&config::base_dir());
+    let filtered = config::filter_issues_by_project(issues, project);
+
+    if filtered.is_empty() {
+        match project {
+            Some(name) => println!("{}", format!("Config '{name}' is valid.").green()),
+            None => println!("{}", "All configs are valid.".green()),
+        }
+        return Ok(());
+    }
+
+    for issue in &filtered {
+        println!("{} {}: {}", "✗".red(), issue.project.bold(), issue.message);
+    }
+    bail!("{} config issue(s) found", filtered.len());
 }
 
 /// Check environment for common issues
@@ -668,6 +835,14 @@ pub fn doctor() -> Result<()> {
     let projects = config::list_projects();
     println!("  {} {} project(s) configured", "i".blue(), projects.len());
 
+    // Validate every yaml in ~/.on/
+    let issues = config::validate_configs_in(&config::base_dir());
+    let configs_ok = issues.is_empty();
+    print_check(configs_ok, "all project configs parse cleanly");
+    for issue in &issues {
+        println!("    {} {}: {}", "·".yellow(), issue.project, issue.message);
+    }
+
     // Check git
     let git_ok = Command::new("git")
         .arg("--version")
@@ -680,7 +855,7 @@ pub fn doctor() -> Result<()> {
     print_check(lsof_ok, "lsof available");
 
     println!();
-    if tmux_ok && git_ok && lsof_ok {
+    if tmux_ok && git_ok && lsof_ok && configs_ok {
         println!("{}", "All checks passed!".green());
     } else {
         println!("{}", "Some checks failed. See above.".yellow());
@@ -694,5 +869,112 @@ fn print_check(ok: bool, label: &str) {
         println!("  {} {label}", "✓".green());
     } else {
         println!("  {} {label}", "✗".red());
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #![allow(clippy::unwrap_used, clippy::expect_used)]
+    use super::*;
+
+    #[test]
+    fn parse_yes_default_empty_is_yes() {
+        assert!(parse_yes_default(""));
+        assert!(parse_yes_default("\n"));
+    }
+
+    #[test]
+    fn parse_yes_default_y_variants() {
+        assert!(parse_yes_default("y"));
+        assert!(parse_yes_default("Y"));
+        assert!(parse_yes_default("yes"));
+        assert!(parse_yes_default("  YES \n"));
+    }
+
+    #[test]
+    fn parse_yes_default_no_variants() {
+        assert!(!parse_yes_default("n"));
+        assert!(!parse_yes_default("N"));
+        assert!(!parse_yes_default("no"));
+        assert!(!parse_yes_default(" NO\n"));
+    }
+
+    #[test]
+    fn parse_port_action_kill() {
+        assert_eq!(parse_port_action("k"), PortAction::Kill);
+        assert_eq!(parse_port_action("KILL"), PortAction::Kill);
+    }
+
+    #[test]
+    fn parse_port_action_abort() {
+        assert_eq!(parse_port_action("a"), PortAction::Abort);
+        assert_eq!(parse_port_action("Abort"), PortAction::Abort);
+    }
+
+    #[test]
+    fn parse_port_action_defaults_to_skip() {
+        assert_eq!(parse_port_action(""), PortAction::Skip);
+        assert_eq!(parse_port_action("s"), PortAction::Skip);
+        assert_eq!(parse_port_action("anything else"), PortAction::Skip);
+    }
+
+    #[test]
+    fn parse_ps_pid_ppid_skips_header_and_garbage() {
+        let output = "  PID  PPID\n  100    1\n  200  100\n  300  100\n  400  200\nweird line\n";
+        let tree = parse_ps_pid_ppid(output);
+        assert_eq!(tree.get(&1), Some(&vec![100]));
+        let mut children_of_100 = tree.get(&100).cloned().unwrap_or_default();
+        children_of_100.sort_unstable();
+        assert_eq!(children_of_100, vec![200, 300]);
+        assert_eq!(tree.get(&200), Some(&vec![400]));
+    }
+
+    #[test]
+    fn descendants_walks_full_tree() {
+        // 1 -> {2, 3}; 2 -> {4, 5}; 4 -> {6}
+        let mut tree: std::collections::HashMap<u32, Vec<u32>> =
+            std::collections::HashMap::new();
+        tree.insert(1, vec![2, 3]);
+        tree.insert(2, vec![4, 5]);
+        tree.insert(4, vec![6]);
+        let mut d = descendants_in(&tree, 1);
+        d.sort_unstable();
+        assert_eq!(d, vec![2, 3, 4, 5, 6]);
+    }
+
+    #[test]
+    fn descendants_empty_when_no_children() {
+        let tree = std::collections::HashMap::new();
+        assert!(descendants_in(&tree, 42).is_empty());
+    }
+
+    #[test]
+    fn descendants_handles_bogus_cycle() {
+        // ps shouldn't produce a cycle, but defend against it anyway.
+        let mut tree: std::collections::HashMap<u32, Vec<u32>> =
+            std::collections::HashMap::new();
+        tree.insert(1, vec![2]);
+        tree.insert(2, vec![1]);
+        let d = descendants_in(&tree, 1);
+        // Each PID visited at most once: from 1 we collect 2, then 2's child 1
+        // is the root itself (already visited) → don't recurse.
+        assert_eq!(d, vec![2]);
+    }
+
+    #[test]
+    fn non_interactive_true_for_truthy_env() {
+        assert!(parse_non_interactive(Some("1")));
+        assert!(parse_non_interactive(Some("true")));
+        assert!(parse_non_interactive(Some("yes")));
+        assert!(parse_non_interactive(Some("anything")));
+    }
+
+    #[test]
+    fn non_interactive_false_for_unset_or_falsy() {
+        assert!(!parse_non_interactive(None));
+        assert!(!parse_non_interactive(Some("")));
+        assert!(!parse_non_interactive(Some("0")));
+        assert!(!parse_non_interactive(Some("false")));
+        assert!(!parse_non_interactive(Some("no")));
     }
 }
