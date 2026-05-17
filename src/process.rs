@@ -609,9 +609,7 @@ fn kill_all_process_groups(panes: &[state::PaneState]) {
         let _ = Command::new("kill").args(["-9", "--", &t.pg]).output();
         for pid in &t.pids {
             if state::is_pid_alive(*pid) {
-                let _ = Command::new("kill")
-                    .args(["-9", &pid.to_string()])
-                    .output();
+                let _ = Command::new("kill").args(["-9", &pid.to_string()]).output();
             }
         }
     }
@@ -932,8 +930,7 @@ mod tests {
     #[test]
     fn descendants_walks_full_tree() {
         // 1 -> {2, 3}; 2 -> {4, 5}; 4 -> {6}
-        let mut tree: std::collections::HashMap<u32, Vec<u32>> =
-            std::collections::HashMap::new();
+        let mut tree: std::collections::HashMap<u32, Vec<u32>> = std::collections::HashMap::new();
         tree.insert(1, vec![2, 3]);
         tree.insert(2, vec![4, 5]);
         tree.insert(4, vec![6]);
@@ -951,8 +948,7 @@ mod tests {
     #[test]
     fn descendants_handles_bogus_cycle() {
         // ps shouldn't produce a cycle, but defend against it anyway.
-        let mut tree: std::collections::HashMap<u32, Vec<u32>> =
-            std::collections::HashMap::new();
+        let mut tree: std::collections::HashMap<u32, Vec<u32>> = std::collections::HashMap::new();
         tree.insert(1, vec![2]);
         tree.insert(2, vec![1]);
         let d = descendants_in(&tree, 1);
